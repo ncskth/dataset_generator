@@ -8,12 +8,6 @@
         <geometry>
           <mesh><uri>model://adjustable_spanner/adjustable_spanner.dae</uri></mesh>
         </geometry>
-        <material>
-          <script>
-            <uri>file://media/materials/scripts/gazebo.material</uri>
-            <name>Gazebo/Indigo</name>
-          </script>
-        </material>
       </visual>
 	  <collision name="collision">
         <geometry>
