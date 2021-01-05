@@ -14,12 +14,15 @@ from scipy.spatial.transform import Rotation
 from cv2 import fillConvexPoly, fillPoly
 from glob import glob
 
+global toto_c
+toto_c = 0
+
 # Some global variables
 class TrainingRoom():
 
 	# May be this function should also build the walls and create the camera object
 	def __init__(self, camera_params, image_dimensions, n_sequences_per_scene, n_frames_per_sequence=20):
-		
+
 		# Training_room parameters
 		self.table_height = 0.78  # should check in sdf
 		self.object_bounds_on  = {'x': [-0.55, 0.55], 'y': [-1.60, 0.30]}  # rough space for both tables
@@ -35,8 +38,8 @@ class TrainingRoom():
 		self.n_sequences_per_scene = n_sequences_per_scene
 		self.n_sequences_per_camera = n_sequences_per_scene/self.n_cameras
 		self.camera_speed_states = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for c in range(self.n_cameras)]
-		self.camera_speed_range_t = [0.01, 0.05]  # tangential speed
-		self.camera_speed_range_r = [1.00, 1.00]  # radial speed, > 1 for inward spiral, < 1 for outward spiral
+		self.camera_speed_range_t = [0.001, 0.005]  # tangential speed
+		self.camera_speed_range_r = [1,1]  # radial speed, > 1 for inward spiral, < 1 for outward spiral
 		self.camera_speed_t = np.random.uniform(self.camera_speed_range_t[0], self.camera_speed_range_t[1])
 		self.camera_speed_r = np.random.uniform(self.camera_speed_range_r[0], self.camera_speed_range_r[1])
 		self.camera_look_at = [0.2, -0.6, self.table_height]
@@ -163,7 +166,7 @@ class TrainingRoom():
 					if (this_xmin < other_P[0] < this_xmax and this_ymin < other_P[1] < this_ymax):
 						return True
 		return False
-			
+
 	# Select new random position and angle for the camera
 	def choose_new_camera_pose(self):
 		radius = np.random.uniform(self.min_camera_radius, self.max_camera_radius)
@@ -176,12 +179,16 @@ class TrainingRoom():
 		dest_yaw = np.pi + angle
 		return dest_x, dest_y, dest_z, dest_roll, dest_pitch, dest_yaw
 
+
 	# Circular motion around the center
 	def update_cameras_positions_and_speeds(self):
+		global toto_c
+		toto_c +=1
 		for camera_id in range(self.n_cameras):
 
 			# Update camera position and orientation according to its speeds
 			v_x, v_y, v_z, v_roll, v_pitch, v_yaw = self.camera_speed_states[camera_id]
+			print("Moving Camera to: v_x=%0.6f | v_y=%0.6f | v_z=%0.6f | v_roll=%0.6f | v_pitch=%0.6f | v_yaw=%0.6f " % (v_x, v_y, v_z, v_roll, v_pitch, v_yaw))
 			self.data_collector.move_camera(camera_id, v_x, v_y, v_z, v_roll, v_pitch, v_yaw)
 
 			# Update the speeds to obtain a circular (or spiralic) motion
@@ -198,6 +205,7 @@ class TrainingRoom():
 				v_x = v_x*(norm2_v/new_norm2_v)**(0.5)
 				v_y = v_y*(norm2_v/new_norm2_v)**(0.5)
 			self.camera_speed_states[camera_id][0:2] = v_x, v_y
+
 
 	# For each caemra, initiate new sequences of frames in a given scene
 	def reset_cameras(self):
@@ -361,18 +369,18 @@ class TrainingRoom():
 			plt.imshow(self.data_rgb[0, frame_id]/255.0)
 			plt.axis('off')
 			plt.subplot(1,3,2)
-			plt.title('Segmentation\nlabelling')
-			plt.imshow(self.data_lbl['segments'][0, frame_id], vmin=0, vmax=max(self.object_instances))
-			plt.axis('off')
-			plt.subplot(1,3,3)
 			plt.title('Sample\ndvs frame')
 			plt.imshow(self.data_dvs[0, frame_id]/255.0)
+			plt.axis('off')
+			plt.subplot(1,3,3)
+			plt.title('Segmentation\nlabelling')
+			plt.imshow(self.data_lbl['segments'][0, frame_id], vmin=0, vmax=max(self.object_instances))
 			plt.axis('off')
 			fig.canvas.draw()  # draw the canvas, cache the renderer
 			gif_frame = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
 			gif_frames.append(gif_frame.reshape(fig.canvas.get_width_height()[::-1] + (3,)))
 			plt.close()
-		imageio.mimsave('./segment_examples/sample_%02i.gif' % (scene_index+1,), gif_frames, fps=24)
+		imageio.mimsave('./segment_examples/sample_%02i_%02i.gif' % (file_name_index, scene_index+1,), gif_frames, fps=24)
 
 # Generate the whole dataset 1907
 if __name__ == '__main__':
@@ -406,11 +414,10 @@ if __name__ == '__main__':
 	n_color_channels = 3
 	image_dimensions = camera_params['camera_resolution'] + (n_color_channels,)
 	n_frames_per_sequence = 200  # 20
-	n_sequences_per_scene = 120
+	n_sequences_per_scene = 1
 	assert n_sequences_per_scene % camera_params['n_cameras'] == 0,\
 		'Error: n_sequences_per_scene must be a multiple of n_cameras.'
-	n_samples_per_dataset = 1  
-        # DEPRECATED: ~16 GB for uncompressed np.array((64000, 20, 64, 64, 3), dtype=np.uint8)
+	n_samples_per_dataset = 1  # ~16 GB for uncompressed np.array((64000, 20, 64, 64, 3), dtype=np.uint8)
 	n_scenes_per_dataset = int(n_samples_per_dataset/n_sequences_per_scene)
 	if float(n_samples_per_dataset)/n_sequences_per_scene - n_scenes_per_dataset > 0:
 		n_scenes_per_dataset += 1  # 1 partial run to finish the sequence samples
@@ -441,7 +448,7 @@ if __name__ == '__main__':
 			first_id = scene_index*n_sequences_per_scene
 			last_id = min((scene_index+1)*n_sequences_per_scene, n_samples_per_dataset)
 			indexes_to_fill = np.random.choice(remaining_indexes, size=(last_id-first_id,), replace=False)
-			remaining_indexes = np.delete(remaining_indexes, [np.where(remaining_indexes==idx) for idx in indexes_to_fill])			
+			remaining_indexes = np.delete(remaining_indexes, [np.where(remaining_indexes==idx) for idx in indexes_to_fill])
 			sys.stdout.write('\rCreating dataset (%i/%i sequences generated)' % (first_id, n_samples_per_dataset))
 			sys.stdout.flush()
 			training_room.reset_scene()

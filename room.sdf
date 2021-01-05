@@ -4784,6 +4784,7 @@
             <distortionT1>0.0</distortionT1>
             <distortionT2>0.0</distortionT2>
           </plugin>
+          <update_rate>60.0</update_rate>
           <plugin name="camera_controller" filename="libgazebo_dvs_plugin.so">
             <cameraName>camera_dvs_00</cameraName>
             <robotNamespace>robot</robotNamespace>
