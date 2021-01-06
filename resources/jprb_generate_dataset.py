@@ -38,12 +38,12 @@ class TrainingRoom():
 		self.n_sequences_per_scene = n_sequences_per_scene
 		self.n_sequences_per_camera = n_sequences_per_scene/self.n_cameras
 		self.camera_speed_states = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for c in range(self.n_cameras)]
-		self.camera_speed_range_t = [0.001, 0.005]  # tangential speed
-		self.camera_speed_range_r = [1,1]  # radial speed, > 1 for inward spiral, < 1 for outward spiral
+		self.camera_speed_range_t = [0.003, 0.005]  # tangential speed
+		self.camera_speed_range_r = [0.5,0.6]  # radial speed, > 1 for inward spiral, < 1 for outward spiral
 		self.camera_speed_t = np.random.uniform(self.camera_speed_range_t[0], self.camera_speed_range_t[1])
 		self.camera_speed_r = np.random.uniform(self.camera_speed_range_r[0], self.camera_speed_range_r[1])
 		self.camera_look_at = [0.2, -0.6, self.table_height]
-		self.camera_heights = [0.4, 1.5]  # above table height (for now); in meteres
+		self.camera_heights = [0.4, 0.8]  # above table height (for now); in meteres
 		self.min_camera_radius = 0.5
 		self.max_camera_radius = 1.0
 
@@ -408,12 +408,12 @@ if __name__ == '__main__':
 		camera_params['n_cameras'] = n_cameras_max
 
 	# Dataset parameters
-	plot_gifs = False  # record segmentation labelling .gif examples
+	plot_gifs = True  # record segmentation labelling .gif examples
 	dataset_output_dir = './datasets'
 	dataset_output_name = 'training_room_dataset'  # a number is added to avoid overwriting
 	n_color_channels = 3
 	image_dimensions = camera_params['camera_resolution'] + (n_color_channels,)
-	n_frames_per_sequence = 200  # 20
+	n_frames_per_sequence = 1  # 20
 	n_sequences_per_scene = 1
 	assert n_sequences_per_scene % camera_params['n_cameras'] == 0,\
 		'Error: n_sequences_per_scene must be a multiple of n_cameras.'
