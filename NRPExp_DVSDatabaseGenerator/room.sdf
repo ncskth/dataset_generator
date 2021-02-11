@@ -18,6 +18,8 @@
       </attenuation>
       <cast_shadows>1</cast_shadows>
     </light>
+
+
     <model name="concretewall1_0">
       <static>1</static>
       <link name="concretewall::body">
@@ -4759,7 +4761,7 @@
     <actor name="animated camera">
       <link name="eye_vision_camera">
         <sensor name="camera" type="camera">
-          <pose frame="">0 0 0 0 0 0</pose>
+          <pose frame="">0 0 1.0 0 0 0</pose>
           <topic>/robot/camera</topic>
           <camera name="__default__">
             <horizontal_fov>1.57</horizontal_fov>
@@ -4773,7 +4775,7 @@
             </clip>
           </camera>
           <always_on>1</always_on>
-          <update_rate>30000000.0</update_rate>
+          <update_rate>1000.0</update_rate>
           <visualize>1</visualize>
           <plugin name="mouse_right_eye" filename="libgazebo_ros_camera.so">
             <alwaysOn>1</alwaysOn>
@@ -4817,14 +4819,14 @@
         <loop>true</loop>
         <delay_start>0.000000</delay_start>
         <auto_start>true</auto_start>
-        <trajectory id="0" type="walking">
+        <trajectory id="0" type="linear">
           <waypoint>
-            <time>0</time>
-            <pose>0 0 0 0 0 -1.57</pose>
+            <time>0.0</time>
+            <pose>1.0 0 0 0 0 -3.2</pose>
           </waypoint>
           <waypoint>
-            <time>3</time>
-            <pose>0 0 0 0 0 1.57</pose>
+            <time>1.0</time>
+            <pose>1.0 0 0 0 0 -2.2</pose>
           </waypoint>
         </trajectory>
       </script>
