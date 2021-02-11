@@ -27,3 +27,6 @@
     ## rosbag record
     Default rosbag record path is $HOME/database_generator_record_TIME.bag
     you can change the path in NRPExp_DVSDatabaseGenerator/rosbag_record.launch
+
+# Rosbag useful links
+    http://wiki.ros.org/rosbag
