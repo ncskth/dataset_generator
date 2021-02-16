@@ -22,7 +22,11 @@
 
     ## Compile ROS Packages
     cd $HBP/GazeboRosPkgs
-    catkin_make -j8
+    catkin_make -j8 
+
+    ## Fix Gazebo
+    The update frequency of Gazebo actors is only 30Hz, on order to remove the limit of the actor update frequency run the 
+    ./gazebo-actor-updaterate_patch.sh
 
     ## rosbag record
     Default rosbag record path is $HOME/database_generator_record_TIME.bag
