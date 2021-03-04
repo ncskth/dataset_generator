@@ -88,7 +88,7 @@ start(){
     -v nrp_user_data:/home/bbpnrsoa/.opt/nrpStorage \
     -v nrp_models:/home/bbpnrsoa/nrp/src/Models \
     -v nrp_experiments:/home/bbpnrsoa/nrp/src/Experiments \
-    -v `pwd`:/home/bbpnrsoa/.opt/nrpStorage/dataset_generator_0
+    -v `pwd`:/opt/dataset_generator \
     --name $container $image
   eval setup_$container
   echo -e "${GREEN}$container container is now up and running.${NC}"
