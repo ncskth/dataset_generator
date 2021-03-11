@@ -1,5 +1,5 @@
 import time
-from hbp_nrp_virtual_coach.virtual_coach import VirtualCoach
+from pynrp.virtual_coach import VirtualCoach
 from gazebo_msgs.srv import SpawnEntity
 from geometry_msgs.msg import Pose
 import random
@@ -14,13 +14,14 @@ object_list = ['hammer_simple', 'adjustable_spanner', 'flathead_screwdriver']
 
 
 ## start Virtual Coach
-vc = VirtualCoach(environment='local', storage_username='nrpuser', storage_password='password')
+vc = VirtualCoach(storage_username='nrpuser', storage_password='password')
 
 for i in range(sequences):
     # START NEW SEQUENCE RUN
 
     # launch experiment
-    sim = vc.launch_experiment('NRPExp_DVSDatabaseGenerator')
+    vc.print_cloned_experiments()
+    sim = vc.launch_experiment('NRPExp_DVSDatabaseGenerator_0')
 
     # initialize ros service
     rospy.wait_for_service('gazebo/spawn_sdf_entity')
