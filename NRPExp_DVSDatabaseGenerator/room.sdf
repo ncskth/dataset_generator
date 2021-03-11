@@ -1,5 +1,10 @@
 <sdf version="1.6">
   <world name="default">
+    <physics type='ode'>
+       <max_step_size>0.001</max_step_size>                <!--decrease this parameter to get dvs topics rates > 1kHz, this will also make the physics calculation more precise though. DEAULT: 0.001-->
+       <real_time_factor>1.0</real_time_factor>
+       <real_time_update_rate>100.0</real_time_update_rate>  <!-- decrease this parameter to reach dvs topics reach 1kHz, this will keep the physics computations the same. DEAULT: 1000.0 -->
+     </physics>
     <light name="sun" type="directional">
       <pose frame="">7.485 -12.379 17.2198 0 -0 0</pose>
       <diffuse>0.7 0.7 0.7 1</diffuse>
@@ -13,6 +18,8 @@
       </attenuation>
       <cast_shadows>1</cast_shadows>
     </light>
+
+
     <model name="concretewall1_0">
       <static>1</static>
       <link name="concretewall::body">
@@ -3230,11 +3237,7 @@
     <gravity>0 0 -9.8</gravity>
     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
     <atmosphere type="adiabatic"/>
-    <physics name="default_physics" default="0" type="ode">
-      <max_step_size>0.001</max_step_size>
-      <real_time_factor>1</real_time_factor>
-      <real_time_update_rate>1000</real_time_update_rate>
-    </physics>
+
     <scene>
       <ambient>0.4 0.4 0.4 1</ambient>
       <background>0.7 0.7 0.7 1</background>
@@ -3256,16 +3259,6 @@
       <real_time>0 0</real_time>
       <wall_time>1601651024 346311488</wall_time>
       <iterations>61940</iterations>
-      <model name="camera_00">
-        <pose frame="">0 0 0 0 -0 0</pose>
-        <scale>1 1 1</scale>
-        <link name="eye_vision_camera">
-          <pose frame="">0 0 0 0 -0 0</pose>
-          <velocity>0 0 0 0 -0 0</velocity>
-          <acceleration>0 0 0 0 -0 0</acceleration>
-          <wrench>0 0 0 0 -0 0</wrench>
-        </link>
-      </model>
       <model name="hammer_0">
         <pose frame="">0 0 -1 0 0 0 0</pose>
         <scale>1 1 1</scale>
@@ -4752,10 +4745,13 @@
         </collision> -->
       </link>
     </model>
-    <model name="camera_00">
+
+
+    <!-- An actor -->
+    <actor name="animated camera">
       <link name="eye_vision_camera">
         <sensor name="camera" type="camera">
-          <pose frame="">0 0 0 0 0 0</pose>
+          <pose frame="">0 0 1.0 0 0 0</pose>
           <topic>/robot/camera</topic>
           <camera name="__default__">
             <horizontal_fov>1.57</horizontal_fov>
@@ -4769,7 +4765,7 @@
             </clip>
           </camera>
           <always_on>1</always_on>
-          <update_rate>30.0</update_rate>
+          <update_rate>1000.0</update_rate>
           <visualize>1</visualize>
           <plugin name="mouse_right_eye" filename="libgazebo_ros_camera.so">
             <alwaysOn>1</alwaysOn>
@@ -4784,11 +4780,11 @@
             <distortionT1>0.0</distortionT1>
             <distortionT2>0.0</distortionT2>
           </plugin>
-          <update_rate>60.0</update_rate>
           <plugin name="camera_controller" filename="libgazebo_dvs_plugin.so">
+            <updateRate>0.0</updateRate>
             <cameraName>camera_dvs_00</cameraName>
             <robotNamespace>robot</robotNamespace>
-            <eventThreshold>50</eventThreshold>
+            <eventThreshold>0</eventThreshold>
             <cameraInfoTopicName>camera_info</cameraInfoTopicName>
           </plugin>
         </sensor>
@@ -4809,7 +4805,24 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
-    </model>
+      <script>
+        <loop>true</loop>
+        <delay_start>0.000000</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="linear">
+          <waypoint>
+            <time>0.0</time>
+            <pose>1.0 0 0 0 0 -3.2</pose>
+          </waypoint>
+          <waypoint>
+            <time>1.0</time>
+            <pose>1.0 0 0 0 0 -2.2</pose>
+          </waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+
     <model name="hammer_0">
       <pose frame="">0 0 -1 0 0 0 0</pose>
       <static>1</static>
