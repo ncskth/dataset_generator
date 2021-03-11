@@ -3259,16 +3259,6 @@
       <real_time>0 0</real_time>
       <wall_time>1601651024 346311488</wall_time>
       <iterations>61940</iterations>
-      <model name="camera_00">
-        <pose frame="">0 0 0 0 -0 0</pose>
-        <scale>1 1 1</scale>
-        <link name="eye_vision_camera">
-          <pose frame="">0 0 0 0 -0 0</pose>
-          <velocity>0 0 0 0 -0 0</velocity>
-          <acceleration>0 0 0 0 -0 0</acceleration>
-          <wrench>0 0 0 0 -0 0</wrench>
-        </link>
-      </model>
       <model name="hammer_0">
         <pose frame="">0 0 -1 0 0 0 0</pose>
         <scale>1 1 1</scale>
