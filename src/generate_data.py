@@ -1,12 +1,13 @@
 import time
+import argparse
+import logging
+import random
+import os
+
+import rospy
 from pynrp.virtual_coach import VirtualCoach
 from gazebo_msgs.srv import SpawnEntity
 from geometry_msgs.msg import Pose
-import argparse
-import random
-import rospy
-import os
-
 
 from scene_geom import random_position, random_rotation
 
@@ -33,6 +34,8 @@ def record_sequence(vc, object_list):
         pose.position.x = x
         pose.position.y = y
         pose.position.z = z
+        pose.orientation.x = a
+        pose.orientation.y = b
         pose.orientation.z = c
         pose.orientation.w = d
         reference_frame = "world"
@@ -47,10 +50,14 @@ def record_sequence(vc, object_list):
     # wait until experiment finished
     servers = vc.print_available_servers()
     while servers[0] == "No available servers.":
-        # servers = vc.print_available_servers()
         seconds = int(time.time() - start)
-        print(f" == Waiting until experiment is finished ({ctime}) == ")
+        logging.info(
+            f"== Waiting ({seconds}) {servers[0]} =="
+        )
         time.sleep(1)
+        # Update servers
+        servers = vc.print_available_servers()
+    logging.info(f"Complete: {servers[0]}")
 
     time.sleep(2)
 

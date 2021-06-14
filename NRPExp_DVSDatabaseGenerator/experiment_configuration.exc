@@ -12,7 +12,7 @@
   </environmentModel>
   <bibiConf src="bibi_configuration.bibi"/>
   <cameraPose>
-    <cameraPosition x="4.5" y="0" z="1.8"/>
+    <cameraPosition x="1.0" y="0" z="1.0"/>
     <cameraLookAt x="0" y="0" z="0.6"/>
   </cameraPose>
   <cloneDate>2020-09-29T11:31:30</cloneDate>

@@ -4,3 +4,4 @@
 *.py~
 .idea
 .vscode
+.ipynb_checkpoints/
