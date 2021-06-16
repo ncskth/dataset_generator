@@ -46,7 +46,10 @@ def transform_tool(mesh, pose):
 
 
 def camera_pose_generator(bag, model_topic):
+    camera_offset = [0.045, 0.08, 1.0]
     for topic, msg, t in bag.read_messages(topics=[model_topic]):
+        if t.to_time() == 229.716:
+            continue # skip weird timestep
         camera_pose = msg.pose[0]
         orientation = camera_pose.orientation
         quaternion = np.array(
@@ -54,9 +57,9 @@ def camera_pose_generator(bag, model_topic):
         )
         euler = euler_from_quaternion(quaternion)
         list_pose = [
-            camera_pose.position.x,
-            camera_pose.position.y,
-            camera_pose.position.z,
+            camera_pose.position.x + camera_offset[0],
+            camera_pose.position.y + camera_offset[1],
+            camera_pose.position.z + camera_offset[2],
         ]
         list_pose.extend(euler)
         yield (t, np.array(list_pose))
@@ -152,23 +155,24 @@ def project_labels(image, camera, tool_poses, tool_meshes):
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
         image_class = image.copy()
         for mesh in triangles:
-            cv2.fillConvexPoly(image_class, mesh, tool_class)
+            cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
+        images.append(image)
     return np.stack(images, -1)
 
 
-def align_generators(*generators, key_fn=lambda x: x[0], value_fn=lambda x: x[1]):
+def align_generators(*generators, key_fn=lambda x: x[0].to_time()):
     is_empty = False
 
     while not is_empty:
         elements = [next(x) for x in generators]
         keys = list(map(key_fn, elements))
-        max_value = max(keys)
-        for index in range(len(keys)):
-            i = 0
-            while keys[index] < max_value:
-                elements[index] = next(generators[index])
-                keys[index] = key_fn(elements[index])
-                i += 1
+        max_key = max(keys)
+        index = 0
+        while keys[index] < max_key:
+            new_element = next(generators[index])
+            new_key = key_fn(new_element)
+            elements[index] = new_element
+            keys[index] = new_key
         yield elements
 
 
@@ -186,20 +190,19 @@ def process_bag(
     images = image_generator(bag, bridge, camera_topic)
     events = event_generator(bag, event_topic)
 
-    for _ in range(70):  # Skip weirdly high ts in the beginning
-        next(cameras)
-
     i = 0
     for (tc, camera), (ti, rgb), (te, events) in align_generators(
-        cameras, images, events
+        camera_poses, images, events
     ):
         image = np.zeros(resolution)
-        labels = project_labels(image, camera, poses, meshes)
-        yield (camera, rgb, events, labels)
+        yield rgb, camera, poses, meshes, (tc, ti, te)
+        #labels = project_labels(image, camera, poses, meshes)
+        #yield (camera, rgb, events, labels)
 
 
 def main(args):
     model_topic = "/gazebo/model_states"
+    link_topic = "/gazebo/link_states"
     camera_topic = "/robot/camera_rgb_00"
     event_topic = "/robot/camera_dvs_00/events"
     bridge = CvBridge()

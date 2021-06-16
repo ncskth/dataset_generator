@@ -70,7 +70,7 @@ def main(args):
     ## start Virtual Coach
     vc = VirtualCoach(storage_username="nrpuser", storage_password="password")
 
-    for i in range(args.sequences):
+    for i in range(args.recordings):
         record_sequence(vc, object_list)
 
 
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         "Virtual coach data generator that generates and records one or more scenes"
     )
     parser.add_argument(
-        "--sequences", type=int, default=1, help="Number of times a scene is recorded"
+        "--recordings", type=int, default=1, help="Number of scenes to record"
     )
     parser.add_argument("--random_seed", type=int, default=0, help="Random seed")
     args = parser.parse_args()

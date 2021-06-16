@@ -3,7 +3,7 @@
   <name>handover</name>
   <thumbnail>TemplateNew.jpg</thumbnail>
   <description>This new experiment is based on the models that you have selected. You are free to edit the description.</description>
-  <timeout time="simulation">60</timeout>
+  <timeout time="simulation">20</timeout>
   <configuration type="brainvisualizer" src="brainvisualizer.json"/>
   <configuration type="3d-settings" src="TemplateNew.ini"/>
   <configuration type="user-interaction-settings" src="user-settings.uis"/>
@@ -12,8 +12,8 @@
   </environmentModel>
   <bibiConf src="bibi_configuration.bibi"/>
   <cameraPose>
-    <cameraPosition x="1.0" y="0" z="1.0"/>
-    <cameraLookAt x="0" y="0" z="0.6"/>
+    <cameraPosition x="0" y="0" z="0"/>
+    <cameraLookAt x="0" y="0" z="-2.35"/>
   </cameraPose>
   <cloneDate>2020-09-29T11:31:30</cloneDate>
   <physicsEngine>ode</physicsEngine>
