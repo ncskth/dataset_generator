@@ -1,7 +1,11 @@
 import argparse
+import logging
 import pathlib
 import re
-from typing import Dict, List, NamedTuple
+from typing import Dict, NamedTuple
+from multiprocessing import Pool
+
+import tqdm 
 
 import rosbag
 import geometry_msgs.msg as geomsg
@@ -41,12 +45,14 @@ def transform_tool(mesh, pose):
         [orientation.x, orientation.y, orientation.z, orientation.w]
     )
     rotation = Rotation.from_quat(orientation_quat)
+    rotation_corrected = rotation.as_euler('xyz')
+    rotation = Rotation.from_euler('xyz', rotation_corrected)
     position = np.array([pose.position.x, pose.position.y, pose.position.z])
     return position + rotation.apply(mesh)
 
 
 def camera_pose_generator(bag, model_topic):
-    camera_offset = [0.045, 0.08, 1.0]
+    camera_offset = [0, 0, 1.0]
     for topic, msg, t in bag.read_messages(topics=[model_topic]):
         if t.to_time() == 229.716:
             continue # skip weird timestep
@@ -67,7 +73,7 @@ def camera_pose_generator(bag, model_topic):
 
 def camera_transform_generator(camera_pose_generator, focal_length):
     for t, (x, y, z, roll, pitch, yaw) in camera_pose_generator:
-        (roll, pitch, yaw) = (radians / 180 * np.pi for radians in (roll, pitch, yaw))
+        (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
         projection = ct.RectilinearProjection(
             focallength_px=focal_length, image=(512, 512)
         )
@@ -75,7 +81,7 @@ def camera_transform_generator(camera_pose_generator, focal_length):
             pos_x_m=x,
             pos_y_m=y,
             elevation_m=z,
-            roll_deg=roll,
+            roll_deg=roll+7.7,
             tilt_deg=90 - pitch,
             heading_deg=90 - yaw,
         )
@@ -88,13 +94,13 @@ def image_generator(bag, bridge, camera_topic):
         yield (t, image)
 
 
-def event_generator(bag, event_topic):
+def event_generator(bag, event_topic, resolution=[512, 512]):
+    rgb_res = (*resolution, 3)
     for topic, msg, t in bag.read_messages(topics=[event_topic]):
-        coordinates = []
+        dvs_img = np.zeros(rgb_res, dtype=np.uint8)
         for event in msg.events:
-            coo = np.array([event.x, event.y, 1 if event.polarity else 0])
-            coordinates.append(coo)
-        yield (t, np.array(coordinates))
+            dvs_img[event.y][event.x] = (event.polarity*255, 255, 0)
+        yield (t, dvs_img)
 
 
 def get_mesh(model_path):
@@ -146,17 +152,17 @@ def get_mesh(model_path):
     return all_vertices_meshes, all_triangles_meshes.astype(int)
 
 
-def project_labels(image, camera, tool_poses, tool_meshes):
+def project_labels(camera, tool_poses, tool_meshes, resolution=(512, 512)):
     images = []
     for tool_class, (tool, pose) in enumerate(tool_poses.items()):
         raw_vertices, raw_triangles = tool_meshes[tool]
         transformed = transform_tool(raw_vertices, pose)
         projection = camera.imageFromSpace(transformed)
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
-        image_class = image.copy()
+        image_class = np.zeros(resolution)
         for mesh in triangles:
             cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
-        images.append(image)
+        images.append(image_class)
     return np.stack(images, -1)
 
 
@@ -167,12 +173,12 @@ def align_generators(*generators, key_fn=lambda x: x[0].to_time()):
         elements = [next(x) for x in generators]
         keys = list(map(key_fn, elements))
         max_key = max(keys)
-        index = 0
-        while keys[index] < max_key:
-            new_element = next(generators[index])
-            new_key = key_fn(new_element)
-            elements[index] = new_element
-            keys[index] = new_key
+        for index in range(len(keys)):
+            while keys[index] < max_key:
+                new_element = next(generators[index])
+                new_key = key_fn(new_element)
+                elements[index] = new_element
+                keys[index] = new_key
         yield elements
 
 
@@ -191,26 +197,38 @@ def process_bag(
     events = event_generator(bag, event_topic)
 
     i = 0
-    for (tc, camera), (ti, rgb), (te, events) in align_generators(
-        camera_poses, images, events
+    for (tc, camera), (tp, camera_pose), (ti, rgb), (te, event) in align_generators(
+        cameras, camera_poses, images, events
     ):
-        image = np.zeros(resolution)
-        yield rgb, camera, poses, meshes, (tc, ti, te)
-        #labels = project_labels(image, camera, poses, meshes)
-        #yield (camera, rgb, events, labels)
+        labels = project_labels(camera, poses, meshes)
+        #yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
+        yield (rgb, event, labels)
 
-
-def main(args):
+def process_dataset(bagfile):
     model_topic = "/gazebo/model_states"
-    link_topic = "/gazebo/link_states"
     camera_topic = "/robot/camera_rgb_00"
     event_topic = "/robot/camera_dvs_00/events"
     bridge = CvBridge()
-    for bagfile in args.files:
-        bag = rosbag.Bag(bagfile)
-        g = process_bag(bag, bridge, model_topic, camera_topic, event_topic)
-        next(g)
+    bagpath = pathlib.Path(bagfile)
+    bag = rosbag.Bag(bagpath)
+    outpath = bagpath.parent / ('dataset' + bagpath.stem)
+    outpath.mkdir()
+    logging.debug(f"Processing {bagpath}")
+    try:
+        for index, (rgb, events, labels) in enumerate(
+            process_bag(bag, bridge, model_topic, camera_topic, event_topic)):
+            outfile = outpath / f"{index}.npz"
+            np.savez(outfile, images=rgb, events=events, labels=labels)
+    except Exception as e:
+        logging.error("Exception when processing", e)
+        pass # Ignore empty generators
 
+def main(args):
+    logging.info(f"Processing {len(args.files)} bagfiles")
+    with Pool(10) as p:
+        list(tqdm.tqdm(p.imap(process_dataset, args.files)))
+    #process_dataset(args.files[0])
+    print("Done processing")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Postprocess NRP DVS datasets")
