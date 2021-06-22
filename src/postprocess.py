@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import logging
 import pathlib
 import re
@@ -9,6 +10,7 @@ import tqdm
 
 import rosbag
 import geometry_msgs.msg as geomsg
+import message_filters
 
 import cameratransform as ct
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
@@ -81,7 +83,7 @@ def camera_transform_generator(camera_pose_generator, focal_length):
             pos_x_m=x,
             pos_y_m=y,
             elevation_m=z,
-            roll_deg=roll+7.7,
+            roll_deg=roll,
             tilt_deg=90 - pitch,
             heading_deg=90 - yaw,
         )
@@ -166,7 +168,15 @@ def project_labels(camera, tool_poses, tool_meshes, resolution=(512, 512)):
     return np.stack(images, -1)
 
 
-def align_generators(*generators, key_fn=lambda x: x[0].to_time()):
+def message_to_time(input_tuple):
+    t, msg = input_tuple
+    if hasattr(msg, 'header'):
+        return datetime.time(second=msg.header.stamp.secs, microsecond=msg.header.stamp.nsecs // 1000)
+    else:
+        return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
+
+
+def align_generators(*generators, key_fn=message_to_time):
     is_empty = False
 
     while not is_empty:
@@ -201,8 +211,8 @@ def process_bag(
         cameras, camera_poses, images, events
     ):
         labels = project_labels(camera, poses, meshes)
-        #yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
-        yield (rgb, event, labels)
+        yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
+        #yield (rgb, event, labels)
 
 def process_dataset(bagfile):
     model_topic = "/gazebo/model_states"
