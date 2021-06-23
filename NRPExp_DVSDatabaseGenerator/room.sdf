@@ -4382,6 +4382,9 @@
             <eventThreshold>0</eventThreshold>
             <cameraInfoTopicName>camera_info</cameraInfoTopicName>
           </plugin>
+
+          <plugin name="gazebo_model_state_timestamp_patch" filename="libgazebo_model_state_timestamp_patch.so"/>
+
         </sensor>
         <gravity>0</gravity>
         <self_collide>0</self_collide>
@@ -4465,6 +4468,7 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
+      <plugin name="gazebo_model_state_timestamp_patch" filename="libgazebo_model_state_timestamp_patch.so"/>
     </model>
     <model name="hammer_1">
       <pose frame="">0 0 -1 0 0 0 0</pose>
