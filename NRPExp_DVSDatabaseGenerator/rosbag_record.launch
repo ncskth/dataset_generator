@@ -1,5 +1,5 @@
 <launch>
     <!-- adapt output path of rosbag file here -->
       <node pkg="rosbag" type="record" name="rosbag_record_dvs"
-          args="record -o $(env HOME)/dvs.bag /clock /gazebo/model_states /robot/camera_rgb_00 /robot/camera_dvs_00/events"/>
+          args="record -o $(env HOME)/dvs.bag /clock /gazebo_modelstates_with_timestamp /robot/camera_rgb_00 /robot/camera_dvs_00/events"/>
 </launch>

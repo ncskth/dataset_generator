@@ -32,7 +32,8 @@ class Datapoint(NamedTuple):
 def get_tool_poses(bag, model_topic):
     # Extract tools
     tools = {}
-    for topic, msg, t in bag.read_messages(topics=[model_topic]):
+    for topic, gazebo_msg, t in bag.read_messages(topics=[model_topic]):
+        msg = gazebo_msg.gazebo_model_states
         if len(msg.pose) > 1:
             for tool_id, tool_name in enumerate(msg.name):
                 if "camera" not in tool_name:
@@ -55,7 +56,8 @@ def transform_tool(mesh, pose):
 
 def camera_pose_generator(bag, model_topic):
     camera_offset = [0, 0, 1.0]
-    for topic, msg, t in bag.read_messages(topics=[model_topic]):
+    for topic, gazebo_msg, t in bag.read_messages(topics=[model_topic]):
+        msg = gazebo_msg.gazebo_model_states
         if t.to_time() == 229.716:
             continue # skip weird timestep
         camera_pose = msg.pose[0]
@@ -215,7 +217,7 @@ def process_bag(
         yield (rgb, event, labels)
 
 def process_dataset(bagfile):
-    model_topic = "/gazebo/model_states"
+    model_topic = "/gazebo_modelstates_with_timestamp"
     camera_topic = "/robot/camera_rgb_00"
     event_topic = "/robot/camera_dvs_00/events"
     bridge = CvBridge()
