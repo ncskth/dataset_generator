@@ -176,7 +176,7 @@ def message_to_time(input_tuple):
         return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
 
 
-def align_generators(*generators, key_fn=message_to_time):
+def align_generators(*generators, key_fn=message_to_time, value_fn=lambda x: x[1]):
     is_empty = False
 
     while not is_empty:
@@ -189,7 +189,7 @@ def align_generators(*generators, key_fn=message_to_time):
                 new_key = key_fn(new_element)
                 elements[index] = new_element
                 keys[index] = new_key
-        yield elements
+        yield zip(keys, map(value_fn, elements))
 
 
 def process_bag(
@@ -211,8 +211,8 @@ def process_bag(
         cameras, camera_poses, images, events
     ):
         labels = project_labels(camera, poses, meshes)
-        yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
-        #yield (rgb, event, labels)
+        #yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
+        yield (rgb, event, labels)
 
 def process_dataset(bagfile):
     model_topic = "/gazebo/model_states"
