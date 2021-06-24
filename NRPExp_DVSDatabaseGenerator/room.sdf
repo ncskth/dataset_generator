@@ -3,7 +3,7 @@
     <physics type='ode'>
        <max_step_size>0.001</max_step_size>                <!--decrease this parameter to get dvs topics rates > 1kHz, this will also make the physics calculation more precise though. DEAULT: 0.001-->
        <real_time_factor>1.0</real_time_factor>
-       <real_time_update_rate>100.0</real_time_update_rate>  <!-- decrease this parameter to reach dvs topics reach 1kHz, this will keep the physics computations the same. DEAULT: 1000.0 -->
+       <real_time_update_rate>1000.0</real_time_update_rate>  <!-- decrease this parameter to reach dvs topics reach 1kHz, this will keep the physics computations the same. DEAULT: 1000.0 -->
      </physics>
     <light name="sun" type="directional">
       <pose frame="">7.485 -12.379 17.2198 0 -0 0</pose>
@@ -4414,10 +4414,18 @@
           </waypoint>
           <waypoint>
             <time>2.0</time>
+            <pose>1.5 1.5 1.0 -0.1 0.1 -2.35</pose>
+          </waypoint>
+          <waypoint>
+            <time>5.0</time>
             <pose>-1.5 1.5 1.0 -0.1 0.1 -0.78</pose>
           </waypoint>
           <waypoint>
-            <time>4.0</time>
+            <time>6.0</time>
+            <pose>-1.5 1.5 1.0 -0.1 0.1 -0.78</pose>
+          </waypoint>
+          <waypoint>
+            <time>7.0</time>
             <pose>-1.5 -1.5 1.0 -0.1 0.1 0.78</pose>
           </waypoint>
           <waypoint>

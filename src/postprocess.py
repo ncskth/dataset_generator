@@ -174,6 +174,8 @@ def message_to_time(input_tuple):
     t, msg = input_tuple
     if hasattr(msg, 'header'):
         return datetime.time(second=msg.header.stamp.secs, microsecond=msg.header.stamp.nsecs // 1000)
+    if hasattr(msg, 'gazebo_model_states_header'):
+        return datetime.time(second=msg.gazebo_model_states_header.stamp.secs, microsecond=msg.gazebo_model_states_header.stamp.nsecs // 1000)
     else:
         return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
 
@@ -213,8 +215,8 @@ def process_bag(
         cameras, camera_poses, images, events
     ):
         labels = project_labels(camera, poses, meshes)
-        #yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
-        yield (rgb, event, labels)
+        yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
+        #yield (rgb, event, labels)
 
 def process_dataset(bagfile):
     model_topic = "/gazebo_modelstates_with_timestamp"
