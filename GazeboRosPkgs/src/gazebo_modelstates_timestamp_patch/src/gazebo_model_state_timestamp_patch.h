@@ -6,7 +6,6 @@
 #include <boost/bind.hpp>
 #include <ros/ros.h>
 #include <std_msgs/Header.h>
-#include <gazebo_modelstates_timestamp_patch/model_states_with_timestamp.h>
 
 
 namespace gazebo

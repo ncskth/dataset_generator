@@ -48,8 +48,8 @@ def transform_tool(mesh, pose):
         [orientation.x, orientation.y, orientation.z, orientation.w]
     )
     rotation = Rotation.from_quat(orientation_quat)
-    rotation_corrected = rotation.as_euler('xyz')
-    rotation = Rotation.from_euler('xyz', rotation_corrected)
+    # rotation_corrected = rotation.as_euler('xyz')
+    # rotation = Rotation.from_euler('xyz', rotation_corrected)
     position = np.array([pose.position.x, pose.position.y, pose.position.z])
     return position + rotation.apply(mesh)
 
@@ -72,7 +72,7 @@ def camera_pose_generator(bag, model_topic):
             camera_pose.position.z + camera_offset[2],
         ]
         list_pose.extend(euler)
-        yield (t, np.array(list_pose))
+        yield (message_to_time((t, gazebo_msg)), np.array(list_pose))
 
 
 def camera_transform_generator(camera_pose_generator, focal_length):
@@ -82,12 +82,8 @@ def camera_transform_generator(camera_pose_generator, focal_length):
             focallength_px=focal_length, image=(512, 512)
         )
         orientation = ct.SpatialOrientation(
-            pos_x_m=x,
-            pos_y_m=y,
-            elevation_m=z,
-            roll_deg=roll,
-            tilt_deg=90 - pitch,
-            heading_deg=90 - yaw,
+            pos_x_m=x, pos_y_m=y, elevation_m=z,
+            roll_deg=roll, tilt_deg=90-pitch, heading_deg=90-yaw,
         )
         yield t, ct.Camera(projection, orientation)
 
@@ -163,7 +159,7 @@ def project_labels(camera, tool_poses, tool_meshes, resolution=(512, 512)):
         transformed = transform_tool(raw_vertices, pose)
         projection = camera.imageFromSpace(transformed)
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
-        image_class = np.zeros(resolution)
+        image_class = np.zeros((512, 512))
         for mesh in triangles:
             cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
         images.append(image_class)
@@ -176,8 +172,9 @@ def message_to_time(input_tuple):
         return datetime.time(second=msg.header.stamp.secs, microsecond=msg.header.stamp.nsecs // 1000)
     if hasattr(msg, 'gazebo_model_states_header'):
         return datetime.time(second=msg.gazebo_model_states_header.stamp.secs, microsecond=msg.gazebo_model_states_header.stamp.nsecs // 1000)
-    else:
-        return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
+    if isinstance(t, datetime.time):
+        return t
+    return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
 
 
 def align_generators(*generators, key_fn=message_to_time, value_fn=lambda x: x[1]):
@@ -187,12 +184,12 @@ def align_generators(*generators, key_fn=message_to_time, value_fn=lambda x: x[1
         elements = [next(x) for x in generators]
         keys = list(map(key_fn, elements))
         max_key = max(keys)
-        for index in range(len(keys)):
-            while keys[index] < max_key:
-                new_element = next(generators[index])
-                new_key = key_fn(new_element)
-                elements[index] = new_element
-                keys[index] = new_key
+        index = 0#for index in range(len(keys)):
+        while keys[index] < max_key:
+            new_element = next(generators[index])
+            new_key = key_fn(new_element)
+            elements[index] = new_element
+            keys[index] = new_key
         yield zip(keys, map(value_fn, elements))
 
 
@@ -211,11 +208,21 @@ def process_bag(
     events = event_generator(bag, event_topic)
 
     i = 0
-    for (tc, camera), (tp, camera_pose), (ti, rgb), (te, event) in align_generators(
-        cameras, camera_poses, images, events
+    for (tc, camera), (tp, camera_pose), (ti, rgb) in align_generators(
+        cameras, camera_poses, images
     ):
-        labels = project_labels(camera, poses, meshes)
-        yield rgb, camera, camera_pose, poses, meshes, labels, event, (tc, ti, te)
+        (x, y, z, roll, pitch, yaw) = camera_pose
+        (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
+        projection = ct.RectilinearProjection(
+            focallength_px=0.5003983220157445 * 512, image=(512, 512)
+        )
+        orientation = ct.SpatialOrientation(
+            pos_x_m=x, pos_y_m=y, elevation_m=z,
+            roll_deg=roll, tilt_deg=90-pitch, heading_deg=90-yaw,
+        )
+        camera2 = ct.Camera(projection, orientation)
+        labels = project_labels(camera2, poses, meshes)
+        yield rgb, camera, camera_pose, poses, meshes, labels, (tc, ti)
         #yield (rgb, event, labels)
 
 def process_dataset(bagfile):
