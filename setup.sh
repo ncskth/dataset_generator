@@ -5,6 +5,7 @@ cp -r GazeboRosPkgs/src/* $HBP/GazeboRosPackages/src/
 cd $HBP/Models
 ./create-symlinks.sh
 cd $HBP/GazeboRosPackages
-catkin_make -j12
+rm -rf build devel
+catkin build
 
-pip3 install texttable future roslibpy
+pip3 install texttable future

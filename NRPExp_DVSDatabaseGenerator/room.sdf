@@ -3,7 +3,7 @@
     <physics type='ode'>
        <max_step_size>0.001</max_step_size>                <!--decrease this parameter to get dvs topics rates > 1kHz, this will also make the physics calculation more precise though. DEAULT: 0.001-->
        <real_time_factor>1.0</real_time_factor>
-       <real_time_update_rate>0.0</real_time_update_rate>  <!-- decrease this parameter to reach dvs topics reach 1kHz, this will keep the physics computations the same. DEAULT: 1000.0 -->
+       <real_time_update_rate>1.0</real_time_update_rate>  <!-- decrease this parameter to reach dvs topics reach 1kHz, this will keep the physics computations the same. DEAULT: 1000.0 -->
      </physics>
     <light name="sun" type="directional">
       <pose frame="">7.485 -12.379 17.2198 0 -0 0</pose>
@@ -4379,7 +4379,7 @@
             <updateRate>0.0</updateRate>
             <cameraName>camera_dvs_00</cameraName>
             <robotNamespace>robot</robotNamespace>
-            <eventThreshold>0</eventThreshold>
+            <eventThreshold>0.1</eventThreshold>
             <cameraInfoTopicName>camera_info</cameraInfoTopicName>
           </plugin>
 
@@ -4415,14 +4415,6 @@
           <waypoint>
             <time>1.0</time>
             <pose>-1.5 1.5 1.0 0 0 -0.78</pose>
-          </waypoint>
-          <waypoint>
-            <time>4.0</time>
-            <pose>-1.5 1.5 1.0 0 0 -0.78</pose>
-          </waypoint>
-          <waypoint>
-            <time>5.0</time>
-            <pose>-1.5 -1.5 1.0 0 0 0.78</pose>
           </waypoint>
         </trajectory>
       </script>
