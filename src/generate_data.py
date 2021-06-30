@@ -3,18 +3,33 @@ import argparse
 import logging
 import random
 import os
+from pathlib import Path
+import xml.etree.ElementTree as ElementTree
 
 import rospy
 from pynrp.virtual_coach import VirtualCoach
 from gazebo_msgs.srv import SpawnEntity
 from geometry_msgs.msg import Pose
 
-from scene_geom import random_position, random_rotation
+from scene_geom import random_position, random_rotation, random_camera_poses
 
 
-def record_sequence(vc, object_list):
+def setup_room(sdffile: Path, pose_start: str, pose_end: str):
+    tree = ElementTree.parse(sdffile)
+    root = tree.getroot()
+    waypoints = root.findall(".//trajectory/waypoint/pose")
+    waypoints[0].text = pose_start
+    waypoints[-1].text = pose_end
+    tree.write(sdffile)
+
+
+def record_sequence(vc, object_list, experiment, experiment_path):
+    # prepare room
+    pose_start, pose_end = random_camera_poses()
+    setup_room(experiment_path / "room.sdf", pose_start, pose_end)
+
     # launch experiment
-    sim = vc.launch_experiment("NRPExp_DVSDatabaseGenerator_0")
+    sim = vc.launch_experiment(experiment)
 
     # initialize ros service
     rospy.wait_for_service("gazebo/spawn_sdf_entity")
@@ -51,9 +66,7 @@ def record_sequence(vc, object_list):
     servers = vc.print_available_servers()
     while servers[0] == "No available servers.":
         seconds = int(time.time() - start)
-        logging.info(
-            f"== Waiting ({seconds}) {servers[0]} =="
-        )
+        logging.info(f"== Waiting ({seconds}) {servers[0]} ==")
         time.sleep(1)
         # Update servers
         servers = vc.print_available_servers()
@@ -65,13 +78,16 @@ def record_sequence(vc, object_list):
 def main(args):
     random.seed(args.random_seed)
 
+    storage_path = os.getenv("STORAGE_PATH", "~/.opt/nrpStorage")
+    experiment = "NRPExp_DVSDatabaseGenerator_0"
+    experiment_path = Path(storage_path) / experiment
     object_list = ["hammer_simple", "adjustable_spanner", "flathead_screwdriver"]
 
     ## start Virtual Coach
     vc = VirtualCoach(storage_username="nrpuser", storage_password="password")
 
     for i in range(args.recordings):
-        record_sequence(vc, object_list)
+        record_sequence(vc, object_list, experiment, experiment_path)
 
 
 if __name__ == "__main__":

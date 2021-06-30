@@ -6,7 +6,7 @@ import re
 from typing import Dict, NamedTuple
 from multiprocessing import Pool
 
-import tqdm 
+import tqdm
 
 import rosbag
 import geometry_msgs.msg as geomsg
@@ -58,8 +58,8 @@ def camera_pose_generator(bag, model_topic):
     camera_offset = [0, 0, 1.0]
     for topic, gazebo_msg, t in bag.read_messages(topics=[model_topic]):
         msg = gazebo_msg.gazebo_model_states
-        if t.to_time() == 229.716:
-            continue # skip weird timestep
+        # if t.to_time() == 229.716:
+        #    continue  # skip weird timestep
         camera_pose = msg.pose[0]
         orientation = camera_pose.orientation
         quaternion = np.array(
@@ -72,26 +72,28 @@ def camera_pose_generator(bag, model_topic):
             camera_pose.position.z + camera_offset[2],
         ]
         list_pose.extend(euler)
-        yield (message_to_time((t, gazebo_msg)), np.array(list_pose))
+        yield (message_to_time(gazebo_msg), np.array(list_pose))
 
 
-def camera_transform_generator(camera_pose_generator, focal_length):
-    for t, (x, y, z, roll, pitch, yaw) in camera_pose_generator:
-        (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
-        projection = ct.RectilinearProjection(
-            focallength_px=focal_length, image=(512, 512)
-        )
-        orientation = ct.SpatialOrientation(
-            pos_x_m=x, pos_y_m=y, elevation_m=z,
-            roll_deg=roll, tilt_deg=90-pitch, heading_deg=90-yaw,
-        )
-        yield t, ct.Camera(projection, orientation)
+def transform_camera(camera_pose, focal_length, resolution):
+    (x, y, z, roll, pitch, yaw) = camera_pose
+    (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
+    projection = ct.RectilinearProjection(focallength_px=focal_length, image=resolution)
+    orientation = ct.SpatialOrientation(
+        pos_x_m=x,
+        pos_y_m=y,
+        elevation_m=z,
+        roll_deg=roll,
+        tilt_deg=90 - pitch,
+        heading_deg=90 - yaw,
+    )
+    return ct.Camera(projection, orientation)
 
 
 def image_generator(bag, bridge, camera_topic):
     for topic, msg, t in bag.read_messages(topics=[camera_topic]):
         image = bridge.imgmsg_to_cv2(msg, "bgr8")
-        yield (t, image)
+        yield (message_to_time(msg), image)
 
 
 def event_generator(bag, event_topic, resolution=[512, 512]):
@@ -99,8 +101,8 @@ def event_generator(bag, event_topic, resolution=[512, 512]):
     for topic, msg, t in bag.read_messages(topics=[event_topic]):
         dvs_img = np.zeros(rgb_res, dtype=np.uint8)
         for event in msg.events:
-            dvs_img[event.y][event.x] = (event.polarity*255, 255, 0)
-        yield (t, dvs_img)
+            dvs_img[event.y][event.x] = (event.polarity * 255, 255, 0)
+        yield (message_to_time(msg), dvs_img)
 
 
 def get_mesh(model_path):
@@ -166,30 +168,37 @@ def project_labels(camera, tool_poses, tool_meshes, resolution=(512, 512)):
     return np.stack(images, -1)
 
 
-def message_to_time(input_tuple):
-    t, msg = input_tuple
-    if hasattr(msg, 'header'):
-        return datetime.time(second=msg.header.stamp.secs, microsecond=msg.header.stamp.nsecs // 1000)
-    if hasattr(msg, 'gazebo_model_states_header'):
-        return datetime.time(second=msg.gazebo_model_states_header.stamp.secs, microsecond=msg.gazebo_model_states_header.stamp.nsecs // 1000)
-    if isinstance(t, datetime.time):
-        return t
-    return datetime.time(second=t.secs, microsecond=t.nsecs // 1000)
+def message_to_time(msg):
+    def stamp_to_time(stamp):
+        minutes = stamp.secs // 60
+        seconds = stamp.secs % 60
+        ms = stamp.nsecs // 1000
+        return datetime.time(minute=minutes, second=seconds, microsecond=ms)
+
+    if isinstance(msg, datetime.time):
+        return msg
+    if hasattr(msg, "header"):
+        return stamp_to_time(msg.header.stamp)
+    if hasattr(msg, "gazebo_model_states_header"):
+        return stamp_to_time(msg.gazebo_model_states_header.stamp)
+    raise ValueError("No timestamp in ", msg)
 
 
-def align_generators(*generators, key_fn=message_to_time, value_fn=lambda x: x[1]):
+def align_generators(
+    *generators, key_fn=lambda x: message_to_time(x[0]), value_fn=lambda x: x[1]
+):
     is_empty = False
 
     while not is_empty:
         elements = [next(x) for x in generators]
         keys = list(map(key_fn, elements))
         max_key = max(keys)
-        index = 0#for index in range(len(keys)):
-        while keys[index] < max_key:
-            new_element = next(generators[index])
-            new_key = key_fn(new_element)
-            elements[index] = new_element
-            keys[index] = new_key
+        for index in range(len(keys)):
+            while keys[index] < max_key:
+                new_element = next(generators[index])
+                new_key = key_fn(new_element)
+                elements[index] = new_element
+                keys[index] = new_key
         yield zip(keys, map(value_fn, elements))
 
 
@@ -203,27 +212,24 @@ def process_bag(
     poses = get_tool_poses(bag, model_topic)
 
     camera_poses = camera_pose_generator(bag, model_topic)
-    cameras = camera_transform_generator(camera_poses, focal_length)
     images = image_generator(bag, bridge, camera_topic)
     events = event_generator(bag, event_topic)
 
+    # Remove first few event from buggy topics
+    next(camera_poses)
+    next(camera_poses)
+    next(images)
+    next(images)
+
     i = 0
-    for (tc, camera), (tp, camera_pose), (ti, rgb) in align_generators(
-        cameras, camera_poses, images
+    for (tp, camera_pose), (ti, rgb), (te, event) in align_generators(
+        camera_poses, images, events
     ):
-        (x, y, z, roll, pitch, yaw) = camera_pose
-        (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
-        projection = ct.RectilinearProjection(
-            focallength_px=0.5003983220157445 * 512, image=(512, 512)
-        )
-        orientation = ct.SpatialOrientation(
-            pos_x_m=x, pos_y_m=y, elevation_m=z,
-            roll_deg=roll, tilt_deg=90-pitch, heading_deg=90-yaw,
-        )
-        camera2 = ct.Camera(projection, orientation)
-        labels = project_labels(camera2, poses, meshes)
-        yield rgb, camera, camera_pose, poses, meshes, labels, (tc, ti)
-        #yield (rgb, event, labels)
+        camera = transform_camera(camera_pose, focal_length, resolution)
+        labels = project_labels(camera, poses, meshes)
+        # yield rgb, camera, camera_poseposes, meshes, labels, event, (tc, ti, te)
+        yield (rgb, event, labels)
+
 
 def process_dataset(bagfile):
     model_topic = "/gazebo_modelstates_with_timestamp"
@@ -232,24 +238,27 @@ def process_dataset(bagfile):
     bridge = CvBridge()
     bagpath = pathlib.Path(bagfile)
     bag = rosbag.Bag(bagpath)
-    outpath = bagpath.parent / ('dataset' + bagpath.stem)
+    outpath = bagpath.parent / ("dataset" + bagpath.stem)
     outpath.mkdir()
     logging.debug(f"Processing {bagpath}")
     try:
         for index, (rgb, events, labels) in enumerate(
-            process_bag(bag, bridge, model_topic, camera_topic, event_topic)):
+            process_bag(bag, bridge, model_topic, camera_topic, event_topic)
+        ):
             outfile = outpath / f"{index}.npz"
             np.savez(outfile, images=rgb, events=events, labels=labels)
     except Exception as e:
         logging.error("Exception when processing", e)
-        pass # Ignore empty generators
+        pass  # Ignore empty generators
+
 
 def main(args):
     logging.info(f"Processing {len(args.files)} bagfiles")
     with Pool(10) as p:
         list(tqdm.tqdm(p.imap(process_dataset, args.files)))
-    #process_dataset(args.files[0])
+    # process_dataset(args.files[0])
     print("Done processing")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Postprocess NRP DVS datasets")

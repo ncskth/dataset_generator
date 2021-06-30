@@ -1,8 +1,8 @@
+import math
 from typing import NamedTuple
+import random
 
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-
-import random
 
 
 class Table(NamedTuple):
@@ -24,3 +24,16 @@ def random_position():
 
 def random_rotation():
     return quaternion_from_euler(0, 0, random.uniform(0, 360))
+
+
+def camera_pose(radian, radius):
+    radian = radian
+    x = math.cos(radian + math.pi) * radius
+    y = math.sin(radian + math.pi) * radius
+    return f"{x} {y} 1.0 0 0 {radian}"
+
+
+def random_camera_poses(distance: float = math.pi / 2, radius: float = 2.5):
+    start = random.random() * math.pi * 2
+    end = start + distance if random.random() > 0.5 else start - distance
+    return camera_pose(start, radius), camera_pose(end, radius)

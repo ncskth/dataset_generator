@@ -4379,7 +4379,7 @@
             <updateRate>0.0</updateRate>
             <cameraName>camera_dvs_00</cameraName>
             <robotNamespace>robot</robotNamespace>
-            <eventThreshold>0.1</eventThreshold>
+            <eventThreshold>10</eventThreshold>
             <cameraInfoTopicName>camera_info</cameraInfoTopicName>
           </plugin>
 
