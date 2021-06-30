@@ -4,6 +4,7 @@ import logging
 import random
 import os
 from pathlib import Path
+import tqdm
 import xml.etree.ElementTree as ElementTree
 
 import rospy
@@ -86,7 +87,7 @@ def main(args):
     ## start Virtual Coach
     vc = VirtualCoach(storage_username="nrpuser", storage_password="password")
 
-    for i in range(args.recordings):
+    for i in tqdm.tqdm(range(args.recordings)):
         record_sequence(vc, object_list, experiment, experiment_path)
 
 

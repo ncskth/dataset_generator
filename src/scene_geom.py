@@ -33,7 +33,10 @@ def camera_pose(radian, radius):
     return f"{x} {y} 1.0 0 0 {radian}"
 
 
-def random_camera_poses(distance: float = math.pi / 2, radius: float = 2.5):
+def random_camera_poses(distance: float = None, radius: float = 2.5):
+    if distance is None:
+        # Set distance [1/4 pi, pi]
+        distance = math.pi / 4 + random.random() * (math.pi - math.pi / 4)
     start = random.random() * math.pi * 2
     end = start + distance if random.random() > 0.5 else start - distance
     return camera_pose(start, radius), camera_pose(end, radius)
