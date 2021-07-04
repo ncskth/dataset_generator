@@ -48,8 +48,6 @@ def transform_tool(mesh, pose):
         [orientation.x, orientation.y, orientation.z, orientation.w]
     )
     rotation = Rotation.from_quat(orientation_quat)
-    # rotation_corrected = rotation.as_euler('xyz')
-    # rotation = Rotation.from_euler('xyz', rotation_corrected)
     position = np.array([pose.position.x, pose.position.y, pose.position.z])
     return position + rotation.apply(mesh)
 
@@ -206,7 +204,7 @@ def process_bag(
     bag, bridge, model_topic, camera_topic, event_topic, resolution=[512, 512]
 ):
     focal_length = 0.5003983220157445 * 512
-    models_path = pathlib.Path("../Models/")
+    models_path = pathlib.Path("Models/")
     dae_models = models_path.glob("*/*.dae")
     meshes = {key.stem: get_mesh(key) for key in dae_models}
     poses = get_tool_poses(bag, model_topic)
@@ -238,26 +236,30 @@ def process_dataset(bagfile):
     bridge = CvBridge()
     bagpath = pathlib.Path(bagfile)
     bag = rosbag.Bag(bagpath)
-    outpath = bagpath.parent / ("dataset" + bagpath.stem)
-    outpath.mkdir()
     logging.debug(f"Processing {bagpath}")
+    frames, events, labels = [], [], []
     try:
-        for index, (rgb, events, labels) in enumerate(
+        for index, (rgb, event, label) in enumerate(
             process_bag(bag, bridge, model_topic, camera_topic, event_topic)
         ):
-            outfile = outpath / f"{index}.npz"
-            np.savez(outfile, images=rgb, events=events, labels=labels)
-    except Exception as e:
-        logging.error("Exception when processing", e)
-        pass  # Ignore empty generators
+            frames.append(rgb)
+            events.append(event)
+            labels.append(label)
+    except Exception as e: 
+        if 'StopIteration' in str(e):
+            pass # Ignore empty generators
+        else:
+            logging.error("Exception when processing", e)
+        
+    outpath = bagpath.parent / f"{bagpath.stem}.npz"
+    np.savez(outpath, frames=np.stack(frames), events=np.stack(events), labels=np.stack(labels))
 
 
 def main(args):
     logging.info(f"Processing {len(args.files)} bagfiles")
     with Pool(10) as p:
         list(tqdm.tqdm(p.imap(process_dataset, args.files)))
-    # process_dataset(args.files[0])
-    print("Done processing")
+    logging.info(f"Done processing {len(args.files)} bagfiles")
 
 
 if __name__ == "__main__":
