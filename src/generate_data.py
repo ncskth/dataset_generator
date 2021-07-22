@@ -98,6 +98,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--recordings", type=int, default=1, help="Number of scenes to record"
     )
-    parser.add_argument("--random_seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--random-seed", type=int, default=0, help="Random seed")
     args = parser.parse_args()
     main(args)

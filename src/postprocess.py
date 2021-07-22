@@ -156,6 +156,21 @@ def project_labels(camera, tool_poses, tool_meshes, resolution):
     return image_class
 
 
+def tools_to_centroid(tool_poses, tool_meshes):
+    poses = []
+    for tool, pose in tool_poses.items():
+        raw_vertices, _ = tool_meshes[tool]
+        transformed = transform_tool(raw_vertices, pose)
+        centroid = transformed.mean(0)
+        orientation = pose.orientation
+        orientation_quat = np.array(
+            [orientation.x, orientation.y, orientation.z, orientation.w]
+        )
+        rotation = Rotation.from_quat(orientation_quat).as_rotvec()
+        poses.append(np.append(centroid, rotation))
+    return np.stack(poses)
+
+
 def message_to_time(msg):
     def stamp_to_time(stamp):
         minutes = stamp.secs // 60
@@ -191,7 +206,13 @@ def align_generators(
 
 
 def process_bag(
-    bag, bridge, model_topic, camera_topic, event_topic, resolution=[640, 480], model_path="Models"
+    bag,
+    bridge,
+    model_topic,
+    camera_topic,
+    event_topic,
+    resolution=[640, 480],
+    model_path="Models",
 ):
     focal_length = 0.5003983220157445 * resolution[0]
     models_path = pathlib.Path(model_path)
@@ -215,10 +236,10 @@ def process_bag(
         camera_poses, images, events
     ):
         camera = transform_camera(camera_pose, focal_length, resolution)
-        print(meshes.keys())
         labels = project_labels(camera, poses, meshes, resolution)
+        tool_poses = tools_to_centroid(poses, meshes)
         # yield rgb, camera, camera_poseposes, meshes, labels, event, (tc, ti, te)
-        yield (rgb, event, labels)
+        yield (rgb, event, labels, tool_poses)
 
 
 def process_dataset(bagfile):
@@ -229,22 +250,29 @@ def process_dataset(bagfile):
     bagpath = pathlib.Path(bagfile)
     bag = rosbag.Bag(bagpath)
     logging.debug(f"Processing {bagpath}")
-    frames, events, labels = [], [], []
+    frames, events, labels, poses = [], [], [], []
     try:
-        for index, (rgb, event, label) in enumerate(
+        for index, (rgb, event, label, pose) in enumerate(
             process_bag(bag, bridge, model_topic, camera_topic, event_topic)
         ):
             frames.append(rgb)
             events.append(event)
             labels.append(label)
-    except Exception as e: 
-        if 'StopIteration' in str(e):
-            pass # Ignore empty generators
+            poses.append(pose)
+    except Exception as e:
+        if "StopIteration" in str(e):
+            pass  # Ignore empty generators
         else:
             logging.error("Exception when processing", e)
-        
+
     outpath = bagpath.parent / f"{bagpath.stem}.npz"
-    np.savez(outpath, frames=np.stack(frames), events=np.stack(events), labels=np.stack(labels))
+    np.savez(
+        outpath,
+        frames=np.stack(frames),
+        events=np.stack(events),
+        labels=np.stack(labels),
+        poses=np.stack(poses),
+    )
 
 
 def main(args):
