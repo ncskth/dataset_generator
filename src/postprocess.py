@@ -22,13 +22,6 @@ import cv2
 from cv_bridge import CvBridge
 
 
-class Datapoint(NamedTuple):
-    timestamp: int
-    poses: Dict[str, object]
-    image_frame: object
-    event_frame: object
-
-
 def get_tool_poses(bag, model_topic):
     # Extract tools
     tools = {}
@@ -56,8 +49,6 @@ def camera_pose_generator(bag, model_topic):
     camera_offset = [0, 0, 1.0]
     for topic, gazebo_msg, t in bag.read_messages(topics=[model_topic]):
         msg = gazebo_msg.gazebo_model_states
-        # if t.to_time() == 229.716:
-        #    continue  # skip weird timestep
         camera_pose = msg.pose[0]
         orientation = camera_pose.orientation
         quaternion = np.array(
@@ -94,12 +85,12 @@ def image_generator(bag, bridge, camera_topic):
         yield (message_to_time(msg), image)
 
 
-def event_generator(bag, event_topic, resolution=[512, 512]):
-    rgb_res = (*resolution, 3)
+def event_generator(bag, event_topic, resolution=[640, 480]):
+    rgb_res = (*resolution, 2)
     for topic, msg, t in bag.read_messages(topics=[event_topic]):
         dvs_img = np.zeros(rgb_res, dtype=np.uint8)
         for event in msg.events:
-            dvs_img[event.y][event.x] = (event.polarity * 255, 255, 0)
+            dvs_img[event.x][event.y] = (int(event.polarity), int(not event.polarity))
         yield (message_to_time(msg), dvs_img)
 
 
@@ -152,18 +143,17 @@ def get_mesh(model_path):
     return all_vertices_meshes, all_triangles_meshes.astype(int)
 
 
-def project_labels(camera, tool_poses, tool_meshes, resolution=(512, 512)):
-    images = []
+def project_labels(camera, tool_poses, tool_meshes, resolution):
+    image_class = np.zeros(resolution)
     for tool_class, (tool, pose) in enumerate(tool_poses.items()):
         raw_vertices, raw_triangles = tool_meshes[tool]
         transformed = transform_tool(raw_vertices, pose)
         projection = camera.imageFromSpace(transformed)
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
-        image_class = np.zeros((512, 512))
         for mesh in triangles:
+            # Tool class is incremented such that 0 becomes "background"
             cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
-        images.append(image_class)
-    return np.stack(images, -1)
+    return image_class
 
 
 def message_to_time(msg):
@@ -201,10 +191,11 @@ def align_generators(
 
 
 def process_bag(
-    bag, bridge, model_topic, camera_topic, event_topic, resolution=[512, 512]
+    bag, bridge, model_topic, camera_topic, event_topic, resolution=[640, 480], model_path="Models"
 ):
-    focal_length = 0.5003983220157445 * 512
-    models_path = pathlib.Path("Models/")
+    focal_length = 0.5003983220157445 * resolution[0]
+    models_path = pathlib.Path(model_path)
+    assert models_path.exists(), f"Could not find the path to Models: {model_path}"
     dae_models = models_path.glob("*/*.dae")
     meshes = {key.stem: get_mesh(key) for key in dae_models}
     poses = get_tool_poses(bag, model_topic)
@@ -224,7 +215,8 @@ def process_bag(
         camera_poses, images, events
     ):
         camera = transform_camera(camera_pose, focal_length, resolution)
-        labels = project_labels(camera, poses, meshes)
+        print(meshes.keys())
+        labels = project_labels(camera, poses, meshes, resolution)
         # yield rgb, camera, camera_poseposes, meshes, labels, event, (tc, ti, te)
         yield (rgb, event, labels)
 
