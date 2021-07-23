@@ -86,11 +86,13 @@ def image_generator(bag, bridge, camera_topic):
 
 
 def event_generator(bag, event_topic, resolution=[640, 480]):
-    rgb_res = (*resolution, 2)
+    # Note: We reverse the resolution to align with row-format HxW
+    rgb_res = (*list(reversed(resolution)), 2)
     for topic, msg, t in bag.read_messages(topics=[event_topic]):
         dvs_img = np.zeros(rgb_res, dtype=np.uint8)
         for event in msg.events:
-            dvs_img[event.x][event.y] = (int(event.polarity), int(not event.polarity))
+            # Note: we assign HxW to support row-format
+            dvs_img[event.y][event.x] = (int(event.polarity), int(not event.polarity))
         yield (message_to_time(msg), dvs_img)
 
 
@@ -144,7 +146,8 @@ def get_mesh(model_path):
 
 
 def project_labels(camera, tool_poses, tool_meshes, resolution):
-    image_class = np.zeros(resolution)
+    # Note: We reverse the resolution to align with row-format HxW
+    image_class = np.zeros(list(reversed(resolution)))
     for tool_class, (tool, pose) in enumerate(tool_poses.items()):
         raw_vertices, raw_triangles = tool_meshes[tool]
         transformed = transform_tool(raw_vertices, pose)
