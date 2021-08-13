@@ -10,7 +10,8 @@ import tqdm
 
 import rosbag
 import geometry_msgs.msg as geomsg
-import message_filters
+
+from sklearn.decomposition import PCA
 
 import cameratransform as ct
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
@@ -142,36 +143,35 @@ def get_mesh(model_path):
             )  # shift triangle indices
             all_vertices_meshes = np.vstack((all_vertices_meshes, vertices_temp))
             all_triangles_meshes = np.vstack((all_triangles_meshes, triangles_temp))
+
     return all_vertices_meshes, all_triangles_meshes.astype(int)
 
 
 def project_labels(camera, tool_poses, tool_meshes, resolution):
     # Note: We reverse the resolution to align with row-format HxW
     image_class = np.zeros(list(reversed(resolution)))
+    tool_pose_labels = []
     for tool_class, (tool, pose) in enumerate(tool_poses.items()):
-        raw_vertices, raw_triangles = tool_meshes[tool]
-        transformed = transform_tool(raw_vertices, pose)
-        projection = camera.imageFromSpace(transformed)
+        raw_vertices, raw_triangles, centroid = tool_meshes[tool]
+
+        # Fill in segmentation polygons
+        transformed_vertices = transform_tool(raw_vertices, pose)
+        projection = camera.imageFromSpace(transformed_vertices)
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
         for mesh in triangles:
             # Tool class is incremented such that 0 becomes "background"
             cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
-    return image_class
 
+        # Project tool pose to camera with PCA
+        pca = PCA(n_components=2)
+        transformed_coords = pca.fit_transform(transformed_vertices)
+        transformed_center = np.mean(transformed_coords, dims=0)
+        pca_center = pca.inverse_transform(transformed_center)
+        x, y = camera.imageFromSpace(pca_center)
+        depth = np.linalg.norm(centroid - camera.getPos())
+        tool_pose_labels.append(np.array(x, y, depth))
 
-def tools_to_centroid(tool_poses, tool_meshes):
-    poses = []
-    for tool, pose in tool_poses.items():
-        raw_vertices, _ = tool_meshes[tool]
-        transformed = transform_tool(raw_vertices, pose)
-        centroid = transformed.mean(0)
-        orientation = pose.orientation
-        orientation_quat = np.array(
-            [orientation.x, orientation.y, orientation.z, orientation.w]
-        )
-        rotation = Rotation.from_quat(orientation_quat).as_rotvec()
-        poses.append(np.append(centroid, rotation))
-    return np.stack(poses)
+    return image_class, tool_pose_labels
 
 
 def message_to_time(msg):
@@ -239,8 +239,7 @@ def process_bag(
         camera_poses, images, events
     ):
         camera = transform_camera(camera_pose, focal_length, resolution)
-        labels = project_labels(camera, poses, meshes, resolution)
-        tool_poses = tools_to_centroid(poses, meshes)
+        labels, tool_poses = project_labels(camera, poses, meshes, resolution)
         # yield rgb, camera, camera_poseposes, meshes, labels, event, (tc, ti, te)
         yield (rgb, event, labels, tool_poses)
 
