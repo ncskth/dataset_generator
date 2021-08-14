@@ -1,4 +1,4 @@
-import argparse
+&quot;=3D"import argparse
 import datetime
 import logging
 import pathlib
@@ -168,7 +168,7 @@ def project_labels(camera, tool_poses, tool_meshes, resolution):
         transformed_center = np.mean(transformed_coords, dims=0)
         pca_center = pca.inverse_transform(transformed_center)
         x, y = camera.imageFromSpace(pca_center)
-        depth = np.linalg.norm(centroid - camera.getPos())
+        depth = np.linalg.norm(pca_center - camera.getPos())
         tool_pose_labels.append(np.array(x, y, depth))
 
     return image_class, tool_pose_labels
