@@ -26,17 +26,20 @@ def random_rotation():
     return quaternion_from_euler(0, 0, random.uniform(0, 360))
 
 
-def camera_pose(radian, radius):
-    radian = radian
-    x = math.cos(radian + math.pi) * radius
-    y = math.sin(radian + math.pi) * radius
-    return f"{x} {y} 1.0 0 0 {radian}"
+def camera_pose(radian_x, radian_z, radius):
+    x = math.cos(radian_z + math.pi) * radius
+    y = math.sin(radian_z + math.pi) * radius
+    # Height: [0.5, 1.0]
+    height = 0.5 + random.random()
+    return f"{x} {y} {height} {radian_x} 0 {radian_z}"
 
 
 def random_camera_poses(distance: float = None, radius: float = 2.5):
     if distance is None:
         # Set distance [1/4 pi, pi]
         distance = math.pi / 4 + random.random() * (math.pi - math.pi / 4)
-    start = random.random() * math.pi * 2
-    end = start + distance if random.random() > 0.5 else start - distance
-    return camera_pose(start, radius), camera_pose(end, radius)
+    start_z = random.random() * math.pi * 2
+    end_z = start_z + distance if random.random() > 0.5 else start_z - distance
+    start_x = random.random() * 0.4 - 0.2
+    end_x = random.random() * 0.4 - 0.2
+    return camera_pose(start_x, start_z, radius), camera_pose(end_x, end_z, radius)
