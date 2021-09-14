@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tqdm
 import xml.etree.ElementTree as ElementTree
+import re
 
 import rospy
 from pynrp.virtual_coach import VirtualCoach
@@ -15,19 +16,35 @@ from geometry_msgs.msg import Pose
 from scene_geom import random_position, random_rotation, random_camera_poses
 
 
-def setup_room(sdffile: Path, pose_start: str, pose_end: str):
+def setup_experiment(configuration_file: Path, duration: float):
+    timeout_pattern = re.compile(
+        '(<timeout time="simulation">).*(</timeout>)', flags=re.MULTILINE
+    )
+    with open(configuration_file, "r") as fp:
+        content = fp.read()
+        replacement = timeout_pattern.sub(rf"\g<1>{duration}\g<2>", content)
+    with open(configuration_file, "w") as fp:
+        fp.write(replacement)
+
+
+def setup_room(sdffile: Path, pose_start: str, pose_end: str, duration: float):
     tree = ElementTree.parse(sdffile)
     root = tree.getroot()
     waypoints = root.findall(".//trajectory/waypoint/pose")
+    waypoint_times = root.findall(".//trajectory/waypoint/time")
     waypoints[0].text = pose_start
     waypoints[-1].text = pose_end
+    waypoint_times[-1].text = str(duration)
     tree.write(sdffile)
 
 
-def record_sequence(vc, object_list, experiment, experiment_path):
+def record_sequence(vc, object_list, experiment, experiment_path, duration):
+    # Setup experiment duration
+    setup_experiment(experiment_path / "experiment_configuration.exc", args.duration)
+
     # prepare room
     pose_start, pose_end = random_camera_poses()
-    setup_room(experiment_path / "room.sdf", pose_start, pose_end)
+    setup_room(experiment_path / "room.sdf", pose_start, pose_end, duration=duration)
 
     # launch experiment
     sim = vc.launch_experiment(experiment)
@@ -84,11 +101,11 @@ def main(args):
     experiment_path = Path(storage_path) / experiment
     object_list = ["hammer_simple", "adjustable_spanner", "flathead_screwdriver"]
 
-    ## start Virtual Coach
+    # Start Virtual Coach
     vc = VirtualCoach(storage_username="nrpuser", storage_password="password")
 
     for i in tqdm.tqdm(range(args.recordings)):
-        record_sequence(vc, object_list, experiment, experiment_path)
+        record_sequence(vc, object_list, experiment, experiment_path, args.duration)
 
 
 if __name__ == "__main__":
@@ -99,5 +116,11 @@ if __name__ == "__main__":
         "--recordings", type=int, default=1, help="Number of scenes to record"
     )
     parser.add_argument("--random-seed", type=int, default=0, help="Random seed")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=1.0,
+        help="Duration of the simulation in seconds. Defaults to 1",
+    )
     args = parser.parse_args()
     main(args)

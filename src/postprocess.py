@@ -1,6 +1,7 @@
-&quot;=3D"import argparse
+import argparse
 import datetime
 import logging
+import math
 import pathlib
 import re
 from typing import Dict, NamedTuple
@@ -14,8 +15,9 @@ import geometry_msgs.msg as geomsg
 from sklearn.decomposition import PCA
 
 import cameratransform as ct
-from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from scipy.spatial.transform import Rotation
+from scipy.ndimage import gaussian_filter
+
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -36,54 +38,19 @@ def get_tool_poses(bag, model_topic):
     return tools
 
 
-def transform_tool(mesh, pose):
-    orientation = pose.orientation
-    orientation_quat = np.array(
-        [orientation.x, orientation.y, orientation.z, orientation.w]
-    )
-    rotation = Rotation.from_quat(orientation_quat)
-    position = np.array([pose.position.x, pose.position.y, pose.position.z])
-    return position + rotation.apply(mesh)
-
-
 def camera_pose_generator(bag, model_topic):
-    camera_offset = [0, 0, 1.0]
     for topic, gazebo_msg, t in bag.read_messages(topics=[model_topic]):
         msg = gazebo_msg.gazebo_model_states
         camera_pose = msg.pose[0]
-        orientation = camera_pose.orientation
-        quaternion = np.array(
-            [orientation.x, orientation.y, orientation.z, orientation.w]
-        )
-        euler = euler_from_quaternion(quaternion)
-        list_pose = [
-            camera_pose.position.x + camera_offset[0],
-            camera_pose.position.y + camera_offset[1],
-            camera_pose.position.z + camera_offset[2],
-        ]
-        list_pose.extend(euler)
-        yield (message_to_time(gazebo_msg), np.array(list_pose))
-
-
-def transform_camera(camera_pose, focal_length, resolution):
-    (x, y, z, roll, pitch, yaw) = camera_pose
-    (roll, pitch, yaw) = (radians * 180 / np.pi for radians in (roll, pitch, yaw))
-    projection = ct.RectilinearProjection(focallength_px=focal_length, image=resolution)
-    orientation = ct.SpatialOrientation(
-        pos_x_m=x,
-        pos_y_m=y,
-        elevation_m=z,
-        roll_deg=roll,
-        tilt_deg=90 - pitch,
-        heading_deg=90 - yaw,
-    )
-    return ct.Camera(projection, orientation)
+        yield (message_to_time(gazebo_msg), camera_pose)
 
 
 def image_generator(bag, bridge, camera_topic):
     for topic, msg, t in bag.read_messages(topics=[camera_topic]):
         image = bridge.imgmsg_to_cv2(msg, "bgr8")
-        yield (message_to_time(msg), image)
+        # Note that events and images are ~1000us behind
+        t = _shift_timestamp(message_to_time(msg), 0)
+        yield (t, image)
 
 
 def event_generator(bag, event_topic, resolution=[640, 480]):
@@ -94,7 +61,50 @@ def event_generator(bag, event_topic, resolution=[640, 480]):
         for event in msg.events:
             # Note: we assign HxW to support row-format
             dvs_img[event.y][event.x] = (int(event.polarity), int(not event.polarity))
-        yield (message_to_time(msg), dvs_img)
+
+        # Note that events and images are ~1000us behind
+        t = _shift_timestamp(message_to_time(msg), 0)
+        yield (t, dvs_img)
+
+
+def transform_tool(mesh, pose):
+    orientation = pose.orientation
+    orientation_quat = np.array(
+        [orientation.x, orientation.y, orientation.z, orientation.w]
+    )
+    rotation = Rotation.from_quat(orientation_quat)
+    position = np.array([pose.position.x, pose.position.y, pose.position.z])
+    return position + rotation.apply(mesh), rotation
+
+
+def transform_camera(camera_pose, focal_length, resolution):
+    pos = camera_pose.position
+    (x, y, z) = pos.x, pos.y, pos.z
+    ori = camera_pose.orientation
+    rotation = Rotation.from_quat([ori.x, ori.y, ori.z, ori.w])
+    (roll, pitch, yaw) = rotation.as_euler("xyz", degrees=True)
+    projection = ct.RectilinearProjection(
+        focallength_px=focal_length,
+        image=resolution,
+    )
+    orientation = ct.SpatialOrientation(
+        pos_x_m=x,
+        pos_y_m=y,
+        elevation_m=z,
+        roll_deg=-roll,
+        tilt_deg=90 - pitch,
+        heading_deg=90 - yaw,
+    )
+    return ct.Camera(projection, orientation), rotation
+
+
+def _shift_timestamp(timestamp, delta):
+    new_timestamp = datetime.time(
+        minute=timestamp.minute,
+        second=timestamp.second,
+        microsecond=timestamp.microsecond + delta,
+    )
+    return new_timestamp
 
 
 def get_mesh(model_path):
@@ -147,15 +157,18 @@ def get_mesh(model_path):
     return all_vertices_meshes, all_triangles_meshes.astype(int)
 
 
-def project_labels(camera, tool_poses, tool_meshes, resolution):
+def project_labels(
+    camera, camera_orientation, tool_poses, tool_meshes, resolution, prob_filter
+):
     # Note: We reverse the resolution to align with row-format HxW
     image_class = np.zeros(list(reversed(resolution)))
     tool_pose_labels = []
+    tool_probabilities = []
     for tool_class, (tool, pose) in enumerate(tool_poses.items()):
-        raw_vertices, raw_triangles, centroid = tool_meshes[tool]
+        raw_vertices, raw_triangles = tool_meshes[tool]
 
         # Fill in segmentation polygons
-        transformed_vertices = transform_tool(raw_vertices, pose)
+        transformed_vertices, tool_orientation = transform_tool(raw_vertices, pose)
         projection = camera.imageFromSpace(transformed_vertices)
         triangles = np.take(projection, raw_triangles, axis=0).astype(int)
         for mesh in triangles:
@@ -163,15 +176,37 @@ def project_labels(camera, tool_poses, tool_meshes, resolution):
             cv2.fillConvexPoly(image_class, mesh, tool_class + 1)
 
         # Project tool pose to camera with PCA
-        pca = PCA(n_components=2)
+        # - Position
+        pca = PCA(n_components=3)
         transformed_coords = pca.fit_transform(transformed_vertices)
-        transformed_center = np.mean(transformed_coords, dims=0)
-        pca_center = pca.inverse_transform(transformed_center)
+        min_coords = transformed_coords.min(axis=0)
+        max_coords = transformed_coords.max(axis=0)
+        center_coords = (min_coords + max_coords) * 0.5
+        pca_center = pca.inverse_transform(center_coords)
         x, y = camera.imageFromSpace(pca_center)
         depth = np.linalg.norm(pca_center - camera.getPos())
-        tool_pose_labels.append(np.array(x, y, depth))
 
-    return image_class, tool_pose_labels
+        # - Orientation (in radians)
+        #   Thanks to https://www.gamedev.net/forums/topic/654346-calculate-relative-rotation-matrix/
+        # camera_rotation = Rotation.from_euler("xyz", camera_orientation)
+        # object_orientation = (camera_rotation.inv() * tool_orientation).as_quat()
+        object_orientation = [0, 0, 0]
+        # - Probability
+        if (
+            x < 0
+            or x >= resolution[0]
+            or y < 0
+            or y >= resolution[1]
+            or math.isnan(x)
+            or math.isnan(y)
+        ):
+            p = 0.0
+        else:
+            p = 1.0 * prob_filter[int(x)][int(y)]
+        tool_pose_labels.append(np.array([x, y, depth, *object_orientation]))
+        tool_probabilities.append(p)
+
+    return image_class, tool_pose_labels, tool_probabilities
 
 
 def message_to_time(msg):
@@ -208,6 +243,15 @@ def align_generators(
         yield zip(keys, map(value_fn, elements))
 
 
+def generate_probability_filter(resolution, margin=0.1):
+    margin_x, margin_y = [int(x * margin) for x in resolution]
+    prob_filter = np.zeros(resolution)
+    prob_filter[
+        margin_x : resolution[0] - margin_x, margin_y : resolution[1] - margin_y
+    ] = 1
+    return gaussian_filter(prob_filter, sigma=30)
+
+
 def process_bag(
     bag,
     bridge,
@@ -217,16 +261,17 @@ def process_bag(
     resolution=[640, 480],
     model_path="Models",
 ):
-    focal_length = 0.5003983220157445 * resolution[0]
+    focal_length = 320.254  # Focallength from 1.57r field of view (set in room.sdf)
     models_path = pathlib.Path(model_path)
     assert models_path.exists(), f"Could not find the path to Models: {model_path}"
     dae_models = models_path.glob("*/*.dae")
     meshes = {key.stem: get_mesh(key) for key in dae_models}
     poses = get_tool_poses(bag, model_topic)
+    prob_filter = generate_probability_filter(resolution)
 
     camera_poses = camera_pose_generator(bag, model_topic)
     images = image_generator(bag, bridge, camera_topic)
-    events = event_generator(bag, event_topic)
+    events = event_generator(bag, event_topic, resolution)
 
     # Remove first few event from buggy topics
     next(camera_poses)
@@ -238,10 +283,18 @@ def process_bag(
     for (tp, camera_pose), (ti, rgb), (te, event) in align_generators(
         camera_poses, images, events
     ):
-        camera = transform_camera(camera_pose, focal_length, resolution)
-        labels, tool_poses = project_labels(camera, poses, meshes, resolution)
-        # yield rgb, camera, camera_poseposes, meshes, labels, event, (tc, ti, te)
-        yield (rgb, event, labels, tool_poses)
+        camera, camera_orientation = transform_camera(
+            camera_pose, focal_length, resolution
+        )
+        labels, tool_poses, p = project_labels(
+            camera, camera_orientation, poses, meshes, resolution, prob_filter
+        )
+        # yield rgb, camera, camera_pose, poses, meshes, labels, event, tool_poses, (
+        #     tp,
+        #     ti,
+        #     te,
+        # )
+        yield (rgb, event, labels, tool_poses, p)
 
 
 def process_dataset(bagfile):
@@ -252,35 +305,42 @@ def process_dataset(bagfile):
     bagpath = pathlib.Path(bagfile)
     bag = rosbag.Bag(bagpath)
     logging.debug(f"Processing {bagpath}")
-    frames, events, labels, poses = [], [], [], []
+    frames, events, labels, poses, probabilities = [], [], [], [], []
     try:
-        for index, (rgb, event, label, pose) in enumerate(
-            process_bag(bag, bridge, model_topic, camera_topic, event_topic)
+        for index, (rgb, event, label, pose, p) in tqdm.tqdm(
+            enumerate(process_bag(bag, bridge, model_topic, camera_topic, event_topic)),
+            desc="Timesteps",
+            position=1,
         ):
             frames.append(rgb)
             events.append(event)
             labels.append(label)
             poses.append(pose)
+            probabilities.append(p)
     except Exception as e:
         if "StopIteration" in str(e):
             pass  # Ignore empty generators
         else:
             logging.error("Exception when processing", e)
+            raise e
 
     outpath = bagpath.parent / f"{bagpath.stem}.npz"
     np.savez(
         outpath,
-        frames=np.stack(frames),
-        events=np.stack(events),
-        labels=np.stack(labels),
-        poses=np.stack(poses),
+        frames=np.nan_to_num(np.stack(frames)),
+        events=np.nan_to_num(np.stack(events)),
+        labels=np.nan_to_num(np.stack(labels)),
+        poses=np.nan_to_num(np.stack(poses)),
+        probabilities=np.nan_to_num(np.stack(probabilities)),
     )
 
 
 def main(args):
     logging.info(f"Processing {len(args.files)} bagfiles")
     with Pool(10) as p:
-        list(tqdm.tqdm(p.imap(process_dataset, args.files)))
+        list(
+            tqdm.tqdm(p.imap(process_dataset, args.files), desc="Bag files", position=0)
+        )
     logging.info(f"Done processing {len(args.files)} bagfiles")
 
 

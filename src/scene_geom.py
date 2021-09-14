@@ -26,20 +26,35 @@ def random_rotation():
     return quaternion_from_euler(0, 0, random.uniform(0, 360))
 
 
-def camera_pose(radian_x, radian_z, radius):
+def camera_pose(radian_y, radian_z, radius, height):
+    """
+    Calculates poses in (px, py, pz, ox, oy, oz) where ``p`` stands for
+    position and ``o`` stands for eulex (xyz) angle.
+    """
     x = math.cos(radian_z + math.pi) * radius
     y = math.sin(radian_z + math.pi) * radius
-    # Height: [0.5, 1.0]
-    height = 0.5 + random.random()
-    return f"{x} {y} {height} {radian_x} 0 {radian_z}"
+    return f"{x} {y} {height} 0 {radian_y} {radian_z}"
 
 
-def random_camera_poses(distance: float = None, radius: float = 2.5):
+def random_camera_poses(distance: float = None, radius: float = 1.5):
+    # Set horizontal panning
     if distance is None:
         # Set distance [1/4 pi, pi]
-        distance = math.pi / 4 + random.random() * (math.pi - math.pi / 4)
-    start_z = random.random() * math.pi * 2
-    end_z = start_z + distance if random.random() > 0.5 else start_z - distance
-    start_x = random.random() * 0.4 - 0.2
-    end_x = random.random() * 0.4 - 0.2
-    return camera_pose(start_x, start_z, radius), camera_pose(end_x, end_z, radius)
+        distance = random.uniform(1 / 4 * math.pi, math.pi)
+    start_z = random.uniform(0, math.pi * 2)
+    end_z = start_z + (distance if random.random() > 0.5 else -distance)
+    # Set vertical panning
+    start_y = random.uniform(0, 1)
+    y_delta = random.uniform(0.1, 0.5)
+    end_y = start_y + (y_delta if random.random() > 0.5 else -y_delta)
+    # end_y = start_y
+    # Set height difference: [1.4, 2.2]
+    start_height = random.uniform(0.4, 0.8) + 1
+    height_delta = random.uniform(0.2, 0.8)
+    end_height = start_height + (
+        height_delta if random.random() > 0.5 else -height_delta
+    )
+    # Generate poses
+    return camera_pose(start_y, start_z, radius, start_height), camera_pose(
+        end_y, end_z, radius, end_height
+    )

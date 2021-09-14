@@ -4413,6 +4413,10 @@
             <pose>1.5 1.5 1.0 0 0 -2.35</pose>
           </waypoint>
           <waypoint>
+            <time>0.0</time>
+            <pose>1.5 1.5 1.0 0 0 -2.35</pose>
+          </waypoint>
+          <waypoint>
             <time>1.0</time>
             <pose>-1.5 1.5 1.0 0 0 -0.78</pose>
           </waypoint>
