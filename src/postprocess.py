@@ -6,6 +6,7 @@ import pathlib
 import re
 from typing import Dict, NamedTuple
 from multiprocessing import Pool
+from functools import partial
 
 import tqdm
 
@@ -243,13 +244,14 @@ def align_generators(
         yield zip(keys, map(value_fn, elements))
 
 
-def generate_probability_filter(resolution, margin=0.1):
-    margin_x, margin_y = [int(x * margin) for x in resolution]
+def generate_probability_filter(
+    resolution, margin_x: int, margin_y: int, sigma: float = 7
+):
     prob_filter = np.zeros(resolution)
     prob_filter[
         margin_x : resolution[0] - margin_x, margin_y : resolution[1] - margin_y
     ] = 1
-    return gaussian_filter(prob_filter, sigma=30)
+    return gaussian_filter(prob_filter, sigma=sigma)
 
 
 def process_bag(
@@ -267,7 +269,7 @@ def process_bag(
     dae_models = models_path.glob("*/*.dae")
     meshes = {key.stem: get_mesh(key) for key in dae_models}
     poses = get_tool_poses(bag, model_topic)
-    prob_filter = generate_probability_filter(resolution)
+    prob_filter = generate_probability_filter(resolution, 20, 20, sigma=7)
 
     camera_poses = camera_pose_generator(bag, model_topic)
     images = image_generator(bag, bridge, camera_topic)
@@ -297,18 +299,11 @@ def process_bag(
         yield (rgb, event, labels, tool_poses, p)
 
 
-def process_dataset(bagfile):
-    model_topic = "/gazebo_modelstates_with_timestamp"
-    camera_topic = "/robot/camera_rgb_00"
-    event_topic = "/robot/camera_dvs_00/events"
-    bridge = CvBridge()
-    bagpath = pathlib.Path(bagfile)
-    bag = rosbag.Bag(bagpath)
-    logging.debug(f"Processing {bagpath}")
+def collect_generator(generator):
     frames, events, labels, poses, probabilities = [], [], [], [], []
     try:
         for index, (rgb, event, label, pose, p) in tqdm.tqdm(
-            enumerate(process_bag(bag, bridge, model_topic, camera_topic, event_topic)),
+            enumerate(generator),
             desc="Timesteps",
             position=1,
         ):
@@ -323,23 +318,70 @@ def process_dataset(bagfile):
         else:
             logging.error("Exception when processing", e)
             raise e
-
-    outpath = bagpath.parent / f"{bagpath.stem}.npz"
-    np.savez(
-        outpath,
-        frames=np.nan_to_num(np.stack(frames)),
-        events=np.nan_to_num(np.stack(events)),
-        labels=np.nan_to_num(np.stack(labels)),
-        poses=np.nan_to_num(np.stack(poses)),
-        probabilities=np.nan_to_num(np.stack(probabilities)),
+    return (
+        np.nan_to_num(np.stack(frames)),
+        np.nan_to_num(np.stack(events)),
+        np.nan_to_num(np.stack(labels)),
+        np.nan_to_num(np.stack(poses)),
+        np.nan_to_num(np.stack(probabilities)),
     )
+
+
+def process_dataset(bagfile, window_length):
+    resolution = [640, 480]
+    model_topic = "/gazebo_modelstates_with_timestamp"
+    camera_topic = "/robot/camera_rgb_00"
+    event_topic = "/robot/camera_dvs_00/events"
+    bridge = CvBridge()
+    bagpath = pathlib.Path(bagfile)
+    bag = rosbag.Bag(bagpath)
+
+    logging.debug(f"Processing {bagpath}")
+
+    frame_generator = process_bag(
+        bag,
+        bridge,
+        model_topic,
+        camera_topic,
+        event_topic,
+        resolution=resolution,
+    )
+
+    frames, events, labels, poses, probabilities = collect_generator(frame_generator)
+    slices = len(frames) // window_length
+    for index in range(1, slices):  # Use first slice for "warmup"
+        warmup_index = (index - 1) * window_length
+        mid_index = index * window_length
+        end_index = (index + 1) * window_length
+        # Ensure we have sufficient datapoint for a full window
+        if len(frames) - 1 < end_index:
+            break
+
+        outpath = bagpath.parent / f"{bagpath.stem}_{index}.npz"
+        np.savez(
+            outpath,
+            resolution=resolution,
+            frames=frames[mid_index:end_index],
+            events=events[mid_index:end_index],
+            events_warmup=events[warmup_index:mid_index],
+            labels=labels[mid_index:end_index],
+            poses=poses[mid_index:end_index],
+            probabilities=probabilities[mid_index:end_index],
+        )
 
 
 def main(args):
     logging.info(f"Processing {len(args.files)} bagfiles")
     with Pool(10) as p:
         list(
-            tqdm.tqdm(p.imap(process_dataset, args.files), desc="Bag files", position=0)
+            tqdm.tqdm(
+                p.imap(
+                    partial(process_dataset, window_length=args.window_length),
+                    args.files,
+                ),
+                desc="Bag files",
+                position=0,
+            )
         )
     logging.info(f"Done processing {len(args.files)} bagfiles")
 
@@ -347,4 +389,10 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Postprocess NRP DVS datasets")
     parser.add_argument("files", nargs="+", help="Datasets to parse")
+    parser.add_argument(
+        "--window-length",
+        type=int,
+        default=128,
+        help="Size of time window to slice dataset into",
+    )
     main(parser.parse_args())
