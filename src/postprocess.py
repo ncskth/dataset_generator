@@ -4,14 +4,12 @@ import logging
 import math
 import pathlib
 import re
-from typing import Dict, NamedTuple
 from multiprocessing import Pool
 from functools import partial
 
 import tqdm
 
 import rosbag
-import geometry_msgs.msg as geomsg
 
 from sklearn.decomposition import PCA
 
@@ -19,11 +17,11 @@ import cameratransform as ct
 from scipy.spatial.transform import Rotation
 from scipy.ndimage import gaussian_filter
 
-import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 
 from cv_bridge import CvBridge
+import torch
 
 
 def get_tool_poses(bag, model_topic):
@@ -204,6 +202,7 @@ def project_labels(
             p = 0.0
         else:
             p = 1.0 * prob_filter[int(x)][int(y)]
+
         tool_pose_labels.append(np.array([x, y, depth, *object_orientation]))
         tool_probabilities.append(p)
 
@@ -357,17 +356,17 @@ def process_dataset(bagfile, window_length):
         if len(frames) - 1 < end_index:
             break
 
-        outpath = bagpath.parent / f"{bagpath.stem}_{index}.npz"
-        np.savez(
-            outpath,
-            resolution=resolution,
-            frames=frames[mid_index:end_index],
-            events=events[mid_index:end_index],
-            events_warmup=events[warmup_index:mid_index],
-            labels=labels[mid_index:end_index],
-            poses=poses[mid_index:end_index],
-            probabilities=probabilities[mid_index:end_index],
+        outpath = bagpath.parent / f"{bagpath.stem}_{index}.dat"
+        point = (
+            resolution,
+            torch.tensor(frames[mid_index:end_index]),
+            torch.tensor(events[mid_index:end_index]),
+            torch.tensor(events[warmup_index:mid_index]),
+            torch.tensor(labels[mid_index:end_index]),
+            torch.tensor(poses[mid_index:end_index]),
+            torch.tensor(probabilities[mid_index:end_index]),
         )
+        torch.save(point, outpath)
 
 
 def main(args):

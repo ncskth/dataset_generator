@@ -39,21 +39,18 @@ def camera_pose(radian_y, radian_z, radius, height):
 def random_camera_poses(distance: float = None, radius: float = 1.5):
     # Set horizontal panning
     if distance is None:
-        # Set distance [1/4 pi, pi]
         distance = random.uniform(1 / 4 * math.pi, math.pi)
-    start_z = random.uniform(0, math.pi * 2)
-    end_z = start_z + (distance if random.random() > 0.5 else -distance)
+    start_z = random.uniform(-math.pi * 2, math.pi * 2)
+    end_z = start_z + distance
     # Set vertical panning
     start_y = random.uniform(0, 1)
-    y_delta = random.uniform(0.1, 0.5)
-    end_y = start_y + (y_delta if random.random() > 0.5 else -y_delta)
+    y_delta = random.uniform(-0.4, 0.5)
+    end_y = start_y + y_delta
     # end_y = start_y
-    # Set height difference: [1.4, 2.2]
-    start_height = random.uniform(0.4, 0.8) + 1
-    height_delta = random.uniform(0.2, 0.8)
-    end_height = start_height + (
-        height_delta if random.random() > 0.5 else -height_delta
-    )
+    # Set height difference: [1.1, 2.4]
+    start_height = random.uniform(1.3, 1.8)
+    height_delta = random.uniform(-0.2, 0.6)
+    end_height = start_height + height_delta
     # Generate poses
     return camera_pose(start_y, start_z, radius, start_height), camera_pose(
         end_y, end_z, radius, end_height
