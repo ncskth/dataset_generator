@@ -8,4 +8,4 @@ cd $HBP/GazeboRosPackages
 rm -rf build devel
 catkin build
 
-pip3 install texttable future tqdm
+pip3 install texttable future tqdm torch roslibpy

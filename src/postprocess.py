@@ -6,6 +6,7 @@ import pathlib
 import re
 from multiprocessing import Pool
 from functools import partial
+from typing import Optional
 
 import tqdm
 
@@ -201,7 +202,7 @@ def project_labels(
         ):
             p = 0.0
         else:
-            p = 1.0 * prob_filter[int(x)][int(y)]
+            p = prob_filter[int(x)][int(y)]
 
         tool_pose_labels.append(np.array([x, y, depth, *object_orientation]))
         tool_probabilities.append(p)
@@ -230,17 +231,20 @@ def align_generators(
 ):
     is_empty = False
 
-    while not is_empty:
-        elements = [next(x) for x in generators]
-        keys = list(map(key_fn, elements))
-        max_key = max(keys)
-        for index in range(len(keys)):
-            while keys[index] < max_key:
-                new_element = next(generators[index])
-                new_key = key_fn(new_element)
-                elements[index] = new_element
-                keys[index] = new_key
-        yield zip(keys, map(value_fn, elements))
+    try:
+        while not is_empty:
+            elements = [next(x) for x in generators]
+            keys = list(map(key_fn, elements))
+            max_key = max(keys)
+            for index in range(len(keys)):
+                while keys[index] < max_key:
+                    new_element = next(generators[index])
+                    new_key = key_fn(new_element)
+                    elements[index] = new_element
+                    keys[index] = new_key
+            yield zip(keys, map(value_fn, elements))
+    except StopIteration:
+        pass  # Ignore empty generators
 
 
 def generate_probability_filter(
@@ -298,41 +302,56 @@ def process_bag(
         yield (rgb, event, labels, tool_poses, p)
 
 
-def collect_generator(generator):
-    frames, events, labels, poses, probabilities = [], [], [], [], []
-    try:
-        for index, (rgb, event, label, pose, p) in tqdm.tqdm(
-            enumerate(generator),
-            desc="Timesteps",
-            position=1,
-        ):
-            frames.append(rgb)
-            events.append(event)
-            labels.append(label)
-            poses.append(pose)
-            probabilities.append(p)
-    except Exception as e:
-        if "StopIteration" in str(e):
-            pass  # Ignore empty generators
-        else:
-            logging.error("Exception when processing", e)
-            raise e
-    return (
-        np.nan_to_num(np.stack(frames)),
-        np.nan_to_num(np.stack(events)),
-        np.nan_to_num(np.stack(labels)),
-        np.nan_to_num(np.stack(poses)),
-        np.nan_to_num(np.stack(probabilities)),
-    )
+def save_windows(generator, output_prefix, resolution, window_length):
+    # Collect generators
+    frames, warmup_events, events, labels, poses, presences = [], [], [], [], [], []
+    slice_index = 0
+    for index, (frame, event, label, pose, presence) in tqdm.tqdm(
+        enumerate(generator),
+        desc="Timesteps",
+        position=1,
+    ):
+        slice_index += 1
+        is_beyond_first_window = index > window_length
+        if slice_index <= window_length:
+            warmup_events.append(event)
+            if is_beyond_first_window:
+                events.append(event)
+                frames.append(frame)
+                labels.append(label)
+                poses.append(pose)
+                presences.append(presence)
+
+        if slice_index == window_length:
+            slice_index = 0
+            if is_beyond_first_window:
+                outpath = f"{output_prefix}_{index}.dat"
+                point = (
+                    resolution,
+                    torch.tensor(np.nan_to_num(np.stack(frames))),
+                    torch.tensor(np.nan_to_num(np.stack(warmup_events))),
+                    torch.tensor(np.nan_to_num(np.stack(events))),
+                    torch.tensor(np.nan_to_num(np.stack(labels))),
+                    torch.tensor(np.nan_to_num(np.stack(poses)), dtype=torch.float32),
+                    torch.tensor(
+                        np.nan_to_num(np.stack(presences)), dtype=torch.float32
+                    ),
+                )
+                torch.save(point, outpath)
+                warmup_events = events
+                frames, events, labels, poses, presences = [], [], [], [], []
 
 
-def process_dataset(bagfile, window_length):
+def process_dataset(bagfile: str, window_length: int, output_dir: Optional[str] = None):
     resolution = [640, 480]
     model_topic = "/gazebo_modelstates_with_timestamp"
     camera_topic = "/robot/camera_rgb_00"
     event_topic = "/robot/camera_dvs_00/events"
     bridge = CvBridge()
     bagpath = pathlib.Path(bagfile)
+    output_dir = (
+        bagpath if output_dir is None else pathlib.Path(output_dir) / bagpath.stem
+    )
     bag = rosbag.Bag(bagpath)
 
     logging.debug(f"Processing {bagpath}")
@@ -345,28 +364,12 @@ def process_dataset(bagfile, window_length):
         event_topic,
         resolution=resolution,
     )
-
-    frames, events, labels, poses, probabilities = collect_generator(frame_generator)
-    slices = len(frames) // window_length
-    for index in range(1, slices):  # Use first slice for "warmup"
-        warmup_index = (index - 1) * window_length
-        mid_index = index * window_length
-        end_index = (index + 1) * window_length
-        # Ensure we have sufficient datapoint for a full window
-        if len(frames) - 1 < end_index:
-            break
-
-        outpath = bagpath.parent / f"{bagpath.stem}_{index}.dat"
-        point = (
-            resolution,
-            torch.tensor(frames[mid_index:end_index]),
-            torch.tensor(events[mid_index:end_index]),
-            torch.tensor(events[warmup_index:mid_index]),
-            torch.tensor(labels[mid_index:end_index]),
-            torch.tensor(poses[mid_index:end_index]),
-            torch.tensor(probabilities[mid_index:end_index]),
-        )
-        torch.save(point, outpath)
+    save_windows(
+        frame_generator,
+        output_prefix=output_dir,
+        resolution=resolution,
+        window_length=window_length,
+    )
 
 
 def main(args):
@@ -375,7 +378,11 @@ def main(args):
         list(
             tqdm.tqdm(
                 p.imap(
-                    partial(process_dataset, window_length=args.window_length),
+                    partial(
+                        process_dataset,
+                        window_length=args.window_length,
+                        output_dir=args.output_dir,
+                    ),
                     args.files,
                 ),
                 desc="Bag files",
@@ -393,5 +400,8 @@ if __name__ == "__main__":
         type=int,
         default=128,
         help="Size of time window to slice dataset into",
+    )
+    parser.add_argument(
+        "--output-dir", type=str, default=None, help="Optional output folder"
     )
     main(parser.parse_args())

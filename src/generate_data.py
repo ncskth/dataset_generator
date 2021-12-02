@@ -7,6 +7,7 @@ from pathlib import Path
 import tqdm
 import xml.etree.ElementTree as ElementTree
 import re
+import json
 
 import rospy
 from pynrp.virtual_coach import VirtualCoach
@@ -96,16 +97,21 @@ def record_sequence(vc, object_list, experiment, experiment_path, duration):
 def main(args):
     random.seed(args.random_seed)
 
-    storage_path = os.getenv("STORAGE_PATH", "~/.opt/nrpStorage")
-    experiment = "NRPExp_DVSDatabaseGenerator_0"
-    experiment_path = Path(storage_path) / experiment
-    object_list = ["hammer_simple", "adjustable_spanner", "flathead_screwdriver"]
-
     # Start Virtual Coach
     vc = VirtualCoach(storage_username="nrpuser", storage_password="password")
 
+    # Import experiment
+    response = vc.import_experiment("NRPExp_DVSDatabaseGenerator")
+    experiment_dest = json.loads(response.text)['destFolderName']
+
+    # Load experiment
+    storage_path = os.getenv("STORAGE_PATH", "~/.opt/nrpStorage")
+    experiment_path = Path(storage_path) / experiment_dest
+    object_list = ["hammer_simple"]#, "adjustable_spanner", "flathead_screwdriver"]
+
+
     for i in tqdm.tqdm(range(args.recordings)):
-        record_sequence(vc, object_list, experiment, experiment_path, args.duration)
+        record_sequence(vc, object_list, experiment_dest, experiment_path, args.duration)
 
 
 if __name__ == "__main__":
